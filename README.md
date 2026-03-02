@@ -1,58 +1,60 @@
-# ComposeXPOS
+# 🍟 ComposeXPOS
 
-ComposeXPOS 是一个基于 **Kotlin Multiplatform + Compose Multiplatform** 的多终端 POS 套件仓库，包含点餐端、收银端、叫号端三套应用与共享库。
+<div align="center">
 
-## 当前项目状态
+A LAN-first **Compose Multiplatform POS Suite** for Android / iOS / Web.
 
-- 开源模式默认启用：**支付与打印为 Mock 流程**（不接真实支付网关/打印机）。
-- 仓库内已移除 Firebase 相关插件、依赖与配置文件。
-- 设备协同以局域网为核心：HTTP + WebSocket + NSD。
+![Kotlin](https://img.shields.io/badge/Kotlin-2.2.21-7F52FF?logo=kotlin&logoColor=white)
+![Compose Multiplatform](https://img.shields.io/badge/Compose_Multiplatform-1.10.0-4285F4?logo=jetpackcompose&logoColor=white)
+![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20iOS%20%7C%20Web-0A7EA4)
+![Open Source Mode](https://img.shields.io/badge/Open_Source_Mode-Mock_Payment%20%26%20Printing-orange)
 
-## 模块说明
+</div>
 
-- `:orderingMachine`：点餐端（Kiosk）
-  - 菜单展示、购物车、下单、支付流程（当前为 Mock）
-- `:cashRegister`：收银端（中枢）
-  - 接收订单、菜单同步、叫号管理、局域网服务
-- `:callingMachine`：叫号屏
-  - 展示备餐中/可取餐队列，接收实时状态推送
-- `:shared`：共享库
-  - 跨模块模型、网络协议、开源安全默认配置
+## ✨ Overview
 
-## 仓库结构
+ComposeXPOS is a multi-device POS project with three apps and one shared module:
 
-```text
-.
-├── callingMachine/
-├── cashRegister/
-├── orderingMachine/
-├── shared/
-├── iosApp/
-├── docs/
-├── build.gradle.kts
-├── settings.gradle.kts
-└── README.md
+- `orderingMachine`: customer-facing kiosk
+- `cashRegister`: cashier hub (orders, menu sync, call-number control)
+- `callingMachine`: pickup calling display
+- `shared`: cross-module protocols, models, and common capabilities
+
+Current project mode: **open-source safe mode**. Payment and printing run in mock flows by default, with no production secrets in the repository.
+
+## 📦 Modules
+
+| Module | Role | Core Capabilities |
+|---|---|---|
+| `:orderingMachine` | Kiosk | Menu display, cart, checkout, payment flow (mock) |
+| `:cashRegister` | Cashier hub | LAN API, order management, menu sync, calling integration |
+| `:callingMachine` | Calling display | Real-time preparing/ready status board, alert linkage |
+| `:shared` | Shared library | Protocol models, network constants, common logic |
+
+## 🧭 Architecture
+
+```mermaid
+graph LR
+    OM["OrderingMachine"] -->|"GET /menu,/dishes\nPOST /orders"| CR["CashRegister"]
+    CR -->|"WebSocket: calling_snapshot / calling_alert"| CM["CallingMachine"]
+    CR -->|"GET/POST /cashregister"| OM
 ```
 
-各应用模块的主要 SourceSet：
+## 🌐 Current Platform Targets
 
-- `androidMain`
-- `commonMain`
-- `iosMain`
-- `webMain`
-- 部分模块包含 `jsMain` / `wasmJsMain`
+- ✅ Android
+- ✅ iOS
+- ✅ Web
 
-## 构建与运行
+## 🚀 Quick Start
 
-### Android
+### 1) Build Android
 
 ```bash
 ./gradlew :callingMachine:assembleDebug :cashRegister:assembleDebug :orderingMachine:assembleDebug
 ```
 
-### Web
-
-开发模式：
+### 2) Run Web Dev Server
 
 ```bash
 ./gradlew :callingMachine:jsBrowserDevelopmentRun
@@ -60,7 +62,7 @@ ComposeXPOS 是一个基于 **Kotlin Multiplatform + Compose Multiplatform** 的
 ./gradlew :orderingMachine:jsBrowserDevelopmentRun
 ```
 
-产物构建：
+### 3) Build Web Distribution
 
 ```bash
 ./gradlew :callingMachine:jsBrowserDistribution
@@ -68,7 +70,7 @@ ComposeXPOS 是一个基于 **Kotlin Multiplatform + Compose Multiplatform** 的
 ./gradlew :orderingMachine:jsBrowserDistribution
 ```
 
-### iOS Framework（Simulator）
+### 4) Build iOS Frameworks (Simulator)
 
 ```bash
 ./gradlew :callingMachine:linkDebugFrameworkIosSimulatorArm64
@@ -76,56 +78,78 @@ ComposeXPOS 是一个基于 **Kotlin Multiplatform + Compose Multiplatform** 的
 ./gradlew :orderingMachine:linkDebugFrameworkIosSimulatorArm64
 ```
 
-### iOS Host App（Xcode）
+## 🧩 iOS Host App (Xcode)
 
-可直接使用 `iosApp/iosApp.xcodeproj` 中共享 Scheme：
+Use: `iosApp/iosApp.xcodeproj`
 
-- `Calling`（`Debug-Calling`）
-- `Cash`（`Debug-Cash`）
-- `Ordering`（`Debug-Ordering`）
+Shared schemes:
 
-对应配置文件：
+- `Calling` (`Debug-Calling`)
+- `Cash` (`Debug-Cash`)
+- `Ordering` (`Debug-Ordering`)
+
+Related configs:
 
 - `iosApp/Configuration/Config-Calling.xcconfig`
 - `iosApp/Configuration/Config-Cash.xcconfig`
 - `iosApp/Configuration/Config-Ordering.xcconfig`
 
-## 设备间协议（当前实现）
+## 🔌 LAN APIs & Protocols
 
-### CashRegister 局域网 API
+### CashRegister API
 
 - `GET /health`
 - `GET /dishes`
 - `GET /menu`
 - `POST /orders`
 
-### OrderingMachine 配置 API
+### OrderingMachine Config API
 
 - `GET /health`
 - `GET /cashregister`
 - `POST /cashregister`
-- Header 鉴权：`X-Posroid-Key: <POSROID_LINK_SHARED_KEY>`
+- Header auth: `X-Posroid-Key: <POSROID_LINK_SHARED_KEY>`
 
 ### CallingMachine WebSocket
 
-- Viewer 模式：`?mode=viewer`
-- Source 模式：
+- Viewer: `?mode=viewer`
+- Source:
   - `?mode=source&key=<CALLING_WS_SHARED_KEY>`
-  - 或 `?ts=<millis>&sig=<sha256>`
+  - `?ts=<millis>&sig=<sha256>`
 
-默认开源占位密钥定义在：
+Default placeholder key location:
 
 - `shared/src/commonMain/kotlin/com/cofopt/shared/network/PosroidLinkProtocol.kt`
 
-## 开源安全说明
+## 🔐 Open-Source Safety Notes
 
-- 请勿在仓库提交真实密钥、证书、商户号、生产地址。
-- 生产环境请通过安全注入（如 Keystore/后端下发）替换占位配置。
-- 支付/打印真实接入请参考：
-  - `docs/OPEN_SOURCE_PAYMENT_PRINTING.md`
+- Firebase dependencies and config have been removed from this repository.
+- Never commit real certificates, keys, merchant credentials, or production endpoints.
+- Replace placeholder configs through secure runtime injection in production environments.
 
-## 最小环境建议
+Production payment/printing integration reference:
+
+- `docs/OPEN_SOURCE_PAYMENT_PRINTING.md`
+
+## 🛠️ Development Environment
 
 - JDK 17+
-- Android SDK（本地 `local.properties` 配置 `sdk.dir`）
-- Xcode（需要构建 iOS Host 时）
+- Android SDK (`sdk.dir` configured in local `local.properties`)
+- Xcode (required only when building the iOS host app)
+
+## 🗺️ Roadmap
+
+- [ ] Production-grade payment gateway adapter
+- [ ] Production-grade printing channels (USB/IP/vendor SDK)
+- [ ] End-to-end integration testing and CI hardening
+- [ ] Multi-device deployment and key-rotation automation
+
+## 🤝 Contributing
+
+Pull requests and issues are welcome.
+
+Recommended local check before submitting:
+
+```bash
+./gradlew :callingMachine:compileDebugKotlinAndroid :cashRegister:compileDebugKotlinAndroid :orderingMachine:compileDebugKotlinAndroid
+```
