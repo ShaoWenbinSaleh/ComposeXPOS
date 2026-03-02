@@ -1,20 +1,60 @@
+# IDE / local env
+.idea/
+.vscode/
 *.iml
-.kotlin
-.gradle
-**/build/
-xcuserdata
-!src/**/build/
 local.properties
-.idea
+.env
+.env.*
+
+# Build / tool caches
+.gradle/
+.kotlin/
+.konan/
+.gradletasknamecache
+**/build/
+!src/**/build/
+.externalNativeBuild/
+.cxx/
+captures/
+
+# JS / web
+node_modules/
+kotlin-js-store/
+**/js/packages/
+**/js/node_modules/
+**/webpack.config.d/*.generated.*
+dist/
+.parcel-cache/
+.npm/
+.yarn/
+
+# macOS / logs
 .DS_Store
-captures
-.externalNativeBuild
-.cxx
+*.log
+*.hprof
+*.orig
+*.rej
+
+# Secrets / signing material
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Xcode
+DerivedData/
+.build/
+Pods/
+**/xcuserdata/
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcshareddata/swiftpm/configuration/
 *.xcodeproj/*
 !*.xcodeproj/project.pbxproj
 !*.xcodeproj/xcshareddata/
 !*.xcodeproj/project.xcworkspace/
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
-node_modules/
-kotlin-js-store/
