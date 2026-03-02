@@ -1,4 +1,4 @@
-# 🍟 ComposeXPOS
+# 🍟 ComposeXPOS - Open Source Kotlin Multiplatform POS System
 
 <div align="center">
 
@@ -11,7 +11,31 @@ A LAN-first **Compose Multiplatform POS Suite** for Android / iOS / Web.
 
 </div>
 
-## ✨ Overview
+ComposeXPOS is an open-source **restaurant POS system** built with **Kotlin Multiplatform** and **Compose Multiplatform**.
+It provides a complete **self-order kiosk + cashier + pickup calling screen** workflow for **Android, iOS, and Web** deployments.
+
+## 🔍 Keywords
+
+`Kotlin Multiplatform POS`, `Compose Multiplatform POS`, `Open Source POS`, `Restaurant POS`, `Self-Order Kiosk`, `Cash Register App`, `Pickup Calling Screen`, `LAN POS System`, `Android POS`, `iOS POS`, `Web POS`
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Use Cases](#use-cases)
+- [Modules](#modules)
+- [Architecture](#architecture)
+- [Current Platform Targets](#current-platform-targets)
+- [Quick Start](#quick-start)
+- [iOS Host App (Xcode)](#ios-host-app-xcode)
+- [LAN APIs and Protocols](#lan-apis-and-protocols)
+- [Open-Source Safety Notes](#open-source-safety-notes)
+- [Development Environment](#development-environment)
+- [GitHub Pages Web Preview](#github-pages-web-preview)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+
+## Overview
 
 ComposeXPOS is a multi-device POS project with three apps and one shared module:
 
@@ -22,7 +46,22 @@ ComposeXPOS is a multi-device POS project with three apps and one shared module:
 
 Current project mode: **open-source safe mode**. Payment and printing run in mock flows by default, with no production secrets in the repository.
 
-## 📦 Modules
+## Features
+
+- Multi-app POS workflow: kiosk ordering, cashier processing, and pickup calling display
+- LAN-first local networking with HTTP/WebSocket for in-store deployments
+- Kotlin Multiplatform codebase with Compose UI across Android, iOS, and Web
+- Open-source-safe defaults: mock payment and mock printing flows
+- Service-oriented module design for easier production adapter integration
+
+## Use Cases
+
+- Restaurant, cafe, and fast-food in-store ordering systems
+- Self-service kiosk + cashier collaboration on local network
+- Pickup number boards and kitchen-to-front-desk call coordination
+- Reference architecture for Compose Multiplatform enterprise apps
+
+## Modules
 
 | Module | Role | Core Capabilities |
 |---|---|---|
@@ -31,7 +70,7 @@ Current project mode: **open-source safe mode**. Payment and printing run in moc
 | `:callingMachine` | Calling display | Real-time preparing/ready status board, alert linkage |
 | `:shared` | Shared library | Protocol models, network constants, common logic |
 
-## 🧭 Architecture
+## Architecture
 
 ```mermaid
 graph LR
@@ -40,13 +79,13 @@ graph LR
     CR -->|"GET/POST /cashregister"| OM
 ```
 
-## 🌐 Current Platform Targets
+## Current Platform Targets
 
 - ✅ Android
 - ✅ iOS
 - ✅ Web
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1) Build Android
 
@@ -78,7 +117,7 @@ graph LR
 ./gradlew :orderingMachine:linkDebugFrameworkIosSimulatorArm64
 ```
 
-## 🧩 iOS Host App (Xcode)
+## iOS Host App (Xcode)
 
 Use: `iosApp/iosApp.xcodeproj`
 
@@ -94,7 +133,7 @@ Related configs:
 - `iosApp/Configuration/Config-Cash.xcconfig`
 - `iosApp/Configuration/Config-Ordering.xcconfig`
 
-## 🔌 LAN APIs & Protocols
+## LAN APIs and Protocols
 
 ### CashRegister API
 
@@ -121,7 +160,7 @@ Default placeholder key location:
 
 - `shared/src/commonMain/kotlin/com/cofopt/shared/network/PosroidLinkProtocol.kt`
 
-## 🔐 Open-Source Safety Notes
+## Open-Source Safety Notes
 
 - Firebase dependencies and config have been removed from this repository.
 - Never commit real certificates, keys, merchant credentials, or production endpoints.
@@ -131,13 +170,13 @@ Production payment/printing integration reference:
 
 - `docs/OPEN_SOURCE_PAYMENT_PRINTING.md`
 
-## 🛠️ Development Environment
+## Development Environment
 
 - JDK 17+
 - Android SDK (`sdk.dir` configured in local `local.properties`)
 - Xcode (required only when building the iOS host app)
 
-## 🌍 GitHub Pages Web Preview
+## GitHub Pages Web Preview
 
 This repo includes a workflow at:
 
@@ -162,14 +201,14 @@ After the first successful run, preview URLs will be:
 - CashRegister: `https://<your-github-username>.github.io/ComposeXPOS/cashRegister/`
 - CallingMachine: `https://<your-github-username>.github.io/ComposeXPOS/callingMachine/`
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [ ] Production-grade payment gateway adapter
 - [ ] Production-grade printing channels (USB/IP/vendor SDK)
 - [ ] End-to-end integration testing and CI hardening
 - [ ] Multi-device deployment and key-rotation automation
 
-## 🤝 Contributing
+## Contributing
 
 Pull requests and issues are welcome.
 
