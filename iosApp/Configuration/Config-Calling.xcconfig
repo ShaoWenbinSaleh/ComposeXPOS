@@ -1,0 +1,6 @@
+#include "Config.xcconfig"
+KMP_MODULE=callingMachine
+KOTLIN_FRAMEWORK_BUILD_TYPE=debug
+SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) CALLING_MACHINE
+PRODUCT_NAME=CallingMachine
+PRODUCT_BUNDLE_IDENTIFIER=com.cofopt.composexpos.callingmachine

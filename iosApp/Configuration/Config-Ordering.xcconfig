@@ -1,0 +1,6 @@
+#include "Config.xcconfig"
+KMP_MODULE=orderingMachine
+KOTLIN_FRAMEWORK_BUILD_TYPE=debug
+SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) ORDERING_MACHINE
+PRODUCT_NAME=OrderingMachine
+PRODUCT_BUNDLE_IDENTIFIER=com.cofopt.composexpos.orderingmachine

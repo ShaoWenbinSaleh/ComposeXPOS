@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- USB Printer class -->
+    <usb-device class="7" />
+    <!-- Generic USB devices (fallback for printers that don't report class 7) -->
+    <usb-device class="255" />
+</resources>
