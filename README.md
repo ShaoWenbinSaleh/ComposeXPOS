@@ -137,6 +137,31 @@ Production payment/printing integration reference:
 - Android SDK (`sdk.dir` configured in local `local.properties`)
 - Xcode (required only when building the iOS host app)
 
+## 🌍 GitHub Pages Web Preview
+
+This repo includes a workflow at:
+
+- `.github/workflows/deploy-web.yml`
+
+It automatically builds and deploys all web apps to GitHub Pages on every push to `main`:
+
+- `orderingMachine`
+- `cashRegister`
+- `callingMachine`
+
+### Enable once in GitHub
+
+1. Open your repo on GitHub.
+2. Go to **Settings → Pages**.
+3. In **Build and deployment**, set **Source = GitHub Actions**.
+
+After the first successful run, preview URLs will be:
+
+- Home: `https://<your-github-username>.github.io/ComposeXPOS/`
+- OrderingMachine: `https://<your-github-username>.github.io/ComposeXPOS/orderingMachine/`
+- CashRegister: `https://<your-github-username>.github.io/ComposeXPOS/cashRegister/`
+- CallingMachine: `https://<your-github-username>.github.io/ComposeXPOS/callingMachine/`
+
 ## 🗺️ Roadmap
 
 - [ ] Production-grade payment gateway adapter

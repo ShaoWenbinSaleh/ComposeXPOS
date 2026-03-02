@@ -1,0 +1,89 @@
+name: Deploy ComposeXPOS Web Apps to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build web distributions
+        run: |
+          ./gradlew \
+            :orderingMachine:jsBrowserDistribution \
+            :cashRegister:jsBrowserDistribution \
+            :callingMachine:jsBrowserDistribution \
+            --no-daemon
+
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p _site/orderingMachine _site/cashRegister _site/callingMachine
+          cp -R orderingMachine/build/dist/js/productionExecutable/* _site/orderingMachine/
+          cp -R cashRegister/build/dist/js/productionExecutable/* _site/cashRegister/
+          cp -R callingMachine/build/dist/js/productionExecutable/* _site/callingMachine/
+
+          cat > _site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>ComposeXPOS Web Preview</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 40px; }
+              h1 { margin-bottom: 12px; }
+              ul { line-height: 1.8; }
+            </style>
+          </head>
+          <body>
+            <h1>ComposeXPOS Web Preview</h1>
+            <ul>
+              <li><a href="./orderingMachine/">OrderingMachine</a></li>
+              <li><a href="./cashRegister/">CashRegister</a></li>
+              <li><a href="./callingMachine/">CallingMachine</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
+
+          touch _site/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
