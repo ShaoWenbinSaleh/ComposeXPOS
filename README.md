@@ -29,6 +29,7 @@ It provides a complete **self-order kiosk + cashier + pickup calling screen** wo
 - [Quick Start](#quick-start)
 - [iOS Host App (Xcode)](#ios-host-app-xcode)
 - [LAN APIs and Protocols](#lan-apis-and-protocols)
+- [Connection Design and Usage Guide](#connection-design-and-usage-guide)
 - [Open-Source Safety Notes](#open-source-safety-notes)
 - [Development Environment](#development-environment)
 - [GitHub Pages Web Preview](#github-pages-web-preview)
@@ -153,12 +154,135 @@ Related configs:
 
 - Viewer: `?mode=viewer`
 - Source:
-  - `?mode=source&key=<CALLING_WS_SHARED_KEY>`
-  - `?ts=<millis>&sig=<sha256>`
+  - Required: `?mode=source&key=<CALLING_WS_SHARED_KEY>`
+  - Optional hardening: `&ts=<millis>&sig=<sha256>`
 
 Default placeholder key location:
 
 - `shared/src/commonMain/kotlin/com/cofopt/shared/network/PosroidLinkProtocol.kt`
+
+## Connection Design and Usage Guide
+
+### 1) Topology and Link Direction
+
+ComposeXPOS uses a LAN-first topology with explicit app roles:
+
+- `orderingMachine -> cashRegister`: order submission and menu retrieval over HTTP
+- `cashRegister -> orderingMachine`: remote endpoint configuration (`/cashregister`) for Android OrderingMachine
+- `cashRegister -> callingMachine`: real-time queue synchronization over WebSocket (`calling_snapshot` / `calling_alert`)
+
+### 2) Discovery Strategy by Platform
+
+#### Android CashRegister
+
+- Uses NSD (DNS-SD) to discover:
+  - `_composexpos-ordering._tcp.`
+  - `_composexpos-calling._tcp.`
+- Resolves IPv4 endpoints from service attributes/host data.
+- Supports manual target override in Debug tools.
+
+#### Web CashRegister
+
+- Browsers do not provide native NSD APIs, so discovery is active-probe based.
+- Discovery combines:
+  - saved/manual host+port hints
+  - current page host and loopback/emulator hosts
+  - LAN prefix scanning (including common private prefixes and WebRTC-assisted hints when available)
+- Ordering probes use `/posroid-ordering.json` and `/health`.
+- Calling probes use WebSocket viewer reachability checks.
+- Manual connection is always available and should be used as a fallback when browser network policies limit discovery.
+
+#### Advertising
+
+- Android OrderingMachine advertises ordering service via NSD and serves discovery/config endpoints.
+- Android CallingMachine advertises calling service via NSD.
+- Web instances are discoverable by probe behavior (HTTP/WebSocket responses), not by NSD broadcast.
+
+### 3) Manual Connection and Disconnect Behavior
+
+#### OrderingMachine targets
+
+- Android OrderingMachine supports full remote configuration:
+  - `POST /cashregister` with shared-key auth
+- Web OrderingMachine instances do not expose `/cashregister` config API.
+  - CashRegister can still select them as communication targets.
+  - UI will label them as `Web instance (no /cashregister API)`.
+- `Disconnect` removes current logical binding from CashRegister-side connected target state.
+
+#### CallingMachine targets
+
+- CashRegister (Android/Web) supports `Manual Host`, `Manual Port`, and `Use Manual Target`.
+- `Disconnect` is available for active CallingMachine links.
+- CallingMachine UI shows local address information to simplify manual linking:
+  - CallingMachine top area: `Local IP`
+  - OrderingMachine System Info: `Local IP`
+
+### 4) Port and Endpoint Conventions
+
+Common defaults and conventions used by the current implementation:
+
+- CallingMachine WebSocket server: `9090`
+- OrderingMachine Android presence/config server: `19081`
+- OrderingMachine Web dev instances: commonly `19082`, plus common dev ports (`3000`, `3001`, `4173`, `5173`, `5174`, etc.)
+- CashRegister LAN API default endpoint in local setups: commonly `:8080`
+
+Core endpoints:
+
+- OrderingMachine:
+  - `GET /health`
+  - `GET /posroid-ordering.json`
+  - `GET /cashregister`
+  - `POST /cashregister` (Android implementation)
+- CallingMachine:
+  - WebSocket with `mode=viewer` or `mode=source`
+
+### 5) Authentication and Trust Model
+
+#### OrderingMachine config push
+
+- `POST /cashregister` requires shared-key authentication.
+- Accepted key input:
+  - Header: `X-Posroid-Key`
+  - Request body: `sharedKey`
+- Expected value: `POSROID_LINK_SHARED_KEY`
+
+#### CallingMachine source link
+
+- Source role requires:
+  - `mode=source`
+  - `key=<CALLING_WS_SHARED_KEY>`
+- Optional request-signature hardening is supported with:
+  - `ts=<millis>`
+  - `sig=sha256("CALLING_WS_V1|<ts>|<CALLING_WS_SHARED_KEY>")`
+- Viewer role (`mode=viewer`) is read-only and cannot publish snapshots/alerts.
+
+All default shared keys are placeholder values in:
+
+- `shared/src/commonMain/kotlin/com/cofopt/shared/network/PosroidLinkProtocol.kt`
+
+### 6) Localhost, LAN IP, and Multi-Instance Rules
+
+- `localhost` always points to the device running the current app.
+  - If two apps are on different devices, do not use `localhost` for cross-device links.
+  - Use the target device `Local IP` shown in UI.
+- Multiple app instances on the same host are differentiated by port and service instance identity.
+  - Example: same IP with different ports is treated as different targets.
+- For local multi-instance testing, start each instance on a unique port and connect by `host:port`.
+
+### 7) Troubleshooting Checklist
+
+- `ERROR:network_unreachable`
+  - Verify host is reachable from the current device (not wrong `localhost` scope).
+  - Use target device `Local IP` + correct port.
+- `no /cashregister API`
+  - Expected when target is a Web OrderingMachine instance.
+  - Selection is still valid; remote config push is simply unavailable.
+- `0 discovered` on Web
+  - Browser private-network/CORS/HTTPS policies may block discovery probes.
+  - Use manual target input.
+- Validate endpoint directly:
+  - `http://<host>:<port>/health`
+  - `http://<host>:<port>/posroid-ordering.json`
 
 ## Open-Source Safety Notes
 
