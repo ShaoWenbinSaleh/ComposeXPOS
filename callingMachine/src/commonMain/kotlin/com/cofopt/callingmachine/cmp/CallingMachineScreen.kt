@@ -47,6 +47,7 @@ fun CallingMachineScreen(
     readyLabel: String,
     statusText: String,
     isConnected: Boolean,
+    localIp: String,
     alertOverlayNumber: Int?,
     alertOverlayNonce: Int,
     isPreparingNumber: (Int) -> Boolean = { false },
@@ -83,6 +84,14 @@ fun CallingMachineScreen(
                         textAlign = TextAlign.Center
                     )
                 }
+                Text(
+                    text = "Local IP: ${localIp.ifBlank { "-" }}",
+                    color = Color(0xFFB0BEC5),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 6.dp),
+                    textAlign = TextAlign.Center
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
 

@@ -33,6 +33,7 @@ actual fun WebCallingMachineApp() {
     var newPreparingNumbers by remember { mutableStateOf(emptySet<Int>()) }
 
     val wsUrl = remember { resolveCallingMachineWsUrl() }
+    val localIpText = remember { resolveLocalIpForWeb() }
 
     DisposableEffect(wsUrl, reconnectNonce) {
         val socket = WebSocket(wsUrl)
@@ -131,6 +132,7 @@ actual fun WebCallingMachineApp() {
         readyLabel = readyLabel,
         statusText = statusText,
         isConnected = isConnected,
+        localIp = localIpText,
         alertOverlayNumber = alertOverlayNumber,
         alertOverlayNonce = alertOverlayNonce,
         isPreparingNumber = { it in newPreparingNumbers }
@@ -150,6 +152,11 @@ private fun resolveCallingMachineWsUrl(): String {
     val port = params["port"]?.toIntOrNull()?.takeIf { it in 1..65535 } ?: 9090
     val scheme = if (window.location.protocol == "https:") "wss" else "ws"
     return "$scheme://$host:$port/?mode=viewer"
+}
+
+private fun resolveLocalIpForWeb(): String {
+    val host = window.location.hostname.orEmpty().trim()
+    return if (host.isBlank()) "-" else host
 }
 
 @Suppress("UnsafeCastFromDynamic")

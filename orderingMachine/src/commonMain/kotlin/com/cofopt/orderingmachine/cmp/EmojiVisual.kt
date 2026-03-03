@@ -8,6 +8,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import composexpos.orderingmachine.generated.resources.Res
+import composexpos.orderingmachine.generated.resources.emoji_bank
+import composexpos.orderingmachine.generated.resources.emoji_card
+import composexpos.orderingmachine.generated.resources.emoji_cash
+import composexpos.orderingmachine.generated.resources.emoji_diamond
 import composexpos.orderingmachine.generated.resources.emoji_dine_in
 import composexpos.orderingmachine.generated.resources.emoji_drink_1
 import composexpos.orderingmachine.generated.resources.emoji_drink_2
@@ -72,6 +76,10 @@ fun emojiToDrawable(emoji: String): DrawableResource? {
         "🥤" -> Res.drawable.emoji_drink_1
         "🧃" -> Res.drawable.emoji_drink_2
         "🍹" -> Res.drawable.emoji_drink_3
+        "💳" -> Res.drawable.emoji_card
+        "💵" -> Res.drawable.emoji_cash
+        "💠" -> Res.drawable.emoji_diamond
+        "🏦" -> Res.drawable.emoji_bank
         else -> null
     }
 }

@@ -1,6 +1,7 @@
 package com.cofopt.callingmachine
 
 import android.util.Log
+import com.cofopt.shared.network.CALLING_WS_SHARED_KEY
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
@@ -12,7 +13,6 @@ import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.ConcurrentHashMap
 
-private const val CALLING_WS_SHARED_KEY = "CHANGE_ME_CALLING_WS_SHARED_KEY"
 private const val TAG = "CallingWebSocketServer"
 
 class CallingWebSocketServer(
@@ -165,13 +165,17 @@ private fun CallingWebSocketServer.connectionRole(resourceDescriptor: String?): 
     val params = parseQueryMap(resourceDescriptor)
     val mode = params["mode"].orEmpty().lowercase()
     if (mode == "viewer") return ConnectionRole.VIEWER
-    if (mode == "source" && params["key"].orEmpty() == CALLING_WS_SHARED_KEY) {
-        return ConnectionRole.SOURCE
-    }
+    if (mode != "source") return null
 
-    val ts = params["ts"]?.toLongOrNull() ?: return null
+    // OrderingMachine-like shared-key gate for all source connections.
+    val key = params["key"].orEmpty()
+    if (key != CALLING_WS_SHARED_KEY) return null
+
+    // Optional signature hardening: if ts/sig are supplied, they must validate.
+    val ts = params["ts"]?.toLongOrNull()
     val sig = params["sig"].orEmpty()
-    if (sig.isBlank()) return null
+    if (ts == null && sig.isBlank()) return ConnectionRole.SOURCE
+    if (ts == null || sig.isBlank()) return null
     val now = System.currentTimeMillis()
     if (kotlin.math.abs(now - ts) > 60_000L) return null
     val expected = callingHandshakeDigest(ts, CALLING_WS_SHARED_KEY)

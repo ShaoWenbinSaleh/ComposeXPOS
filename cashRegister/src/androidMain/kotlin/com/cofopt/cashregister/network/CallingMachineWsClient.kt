@@ -81,7 +81,7 @@ class CallingMachineWsClient(
 
         val ts = System.currentTimeMillis()
         val sig = callingHandshakeDigest(ts)
-        val url = "ws://$hostForUrl:$port/?ts=$ts&sig=$sig"
+        val url = "ws://$hostForUrl:$port/?mode=source&key=$CALLING_WS_SHARED_KEY&ts=$ts&sig=$sig"
         Log.d(TAG, "Connecting to $url (attempt ${reconnectAttempts.get() + 1})")
         
         val request = Request.Builder().url(url).build()

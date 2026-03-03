@@ -23,6 +23,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
     private var readyLabel by mutableStateOf("可取餐")
 
     private var hasReceivedSnapshot: Boolean = false
+    private var localIpText by mutableStateOf("-")
 
     private var alertOverlayNumber by mutableStateOf<Int?>(null)
     private var alertOverlayNonce by mutableStateOf(0)
@@ -145,6 +148,7 @@ class MainActivity : ComponentActivity() {
                 readyLabel = readyLabel,
                 statusText = status,
                 isConnected = isConnected,
+                localIp = localIpText,
                 alertOverlayNumber = alertOverlayNumber,
                 alertOverlayNonce = alertOverlayNonce,
                 isPreparingNumber = { num -> CallingState.isNewPreparingNumber(num) }
@@ -205,6 +209,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        localIpText = resolveLocalIpv4Address() ?: "-"
 
         if (wsServer == null) {
             wsServer = CallingWebSocketServer(wsPort) { host ->
@@ -274,7 +279,30 @@ class MainActivity : ComponentActivity() {
             conn.responseCode in 200..299
         }.getOrDefault(false).also {
             conn.disconnect()
-        }
     }
+}
+
+private fun resolveLocalIpv4Address(): String? {
+    return runCatching {
+        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+        interfaces.toList()
+            .asSequence()
+            .filter { it.isUp && !it.isLoopback && !it.isVirtual }
+            .flatMap { it.inetAddresses.toList().asSequence() }
+            .filterIsInstance<Inet4Address>()
+            .map { it.hostAddress.orEmpty() }
+            .firstOrNull { ip ->
+                ip.isNotBlank() &&
+                    !ip.startsWith("127.") &&
+                    (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."))
+            }
+            ?: interfaces.toList()
+                .asSequence()
+                .flatMap { it.inetAddresses.toList().asSequence() }
+                .filterIsInstance<Inet4Address>()
+                .map { it.hostAddress.orEmpty() }
+                .firstOrNull { ip -> ip.isNotBlank() && !ip.startsWith("127.") }
+    }.getOrNull()
+}
 
 }

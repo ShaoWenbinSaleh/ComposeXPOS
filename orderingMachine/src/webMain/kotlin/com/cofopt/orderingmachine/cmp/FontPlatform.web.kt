@@ -1,3 +1,3 @@
 package com.cofopt.orderingmachine.cmp
 
-actual fun preferSystemFontsOnWeb(): Boolean = true
+actual fun preferSystemFontsOnWeb(): Boolean = false

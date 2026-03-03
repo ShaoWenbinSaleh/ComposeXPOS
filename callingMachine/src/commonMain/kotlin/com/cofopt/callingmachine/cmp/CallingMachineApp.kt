@@ -10,6 +10,7 @@ fun CallingMachineApp(
     readyLabel: String,
     statusText: String,
     isConnected: Boolean,
+    localIp: String = "-",
     alertOverlayNumber: Int?,
     alertOverlayNonce: Int,
     isPreparingNumber: (Int) -> Boolean = { false },
@@ -21,6 +22,7 @@ fun CallingMachineApp(
         readyLabel = readyLabel,
         statusText = statusText,
         isConnected = isConnected,
+        localIp = localIp,
         alertOverlayNumber = alertOverlayNumber,
         alertOverlayNonce = alertOverlayNonce,
         isPreparingNumber = isPreparingNumber
@@ -36,6 +38,7 @@ fun CallingMachineApp() {
         readyLabel = "Ready",
         statusText = "Waiting for source...",
         isConnected = false,
+        localIp = "-",
         alertOverlayNumber = null,
         alertOverlayNonce = 0
     )

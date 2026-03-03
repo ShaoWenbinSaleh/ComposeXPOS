@@ -36,6 +36,7 @@ import composexpos.orderingmachine.generated.resources.Res
 import composexpos.orderingmachine.generated.resources.noto_color_emoji
 import composexpos.orderingmachine.generated.resources.noto_colrv1_emojicompat
 import composexpos.orderingmachine.generated.resources.noto_sans_sc_regular
+import composexpos.orderingmachine.generated.resources.source_han_sans_regular
 import com.cofopt.orderingmachine.CartItem
 import com.cofopt.orderingmachine.Language
 import com.cofopt.orderingmachine.MenuItem
@@ -326,6 +327,7 @@ private fun WebPaymentFlowScreen(
 private fun rememberOrderingMachineTypography(): Typography {
     val preferSystem = preferSystemFontsOnWeb()
     val appFontFamily = FontFamily(
+        Font(Res.font.source_han_sans_regular),
         Font(Res.font.noto_sans_sc_regular),
         Font(Res.font.noto_color_emoji),
         Font(Res.font.noto_colrv1_emojicompat)

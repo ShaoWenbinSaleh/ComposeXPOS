@@ -14,11 +14,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.cofopt.orderingmachine.ui.common.components.DebugSectionCard
+import java.net.Inet4Address
+import java.net.NetworkInterface
 
 @Composable
 fun SystemInfoTab() {
     val context = LocalContext.current
     val appInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+    val localIp = resolveLocalIpv4Address() ?: "-"
     val versionName = appInfo.versionName
     val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
         appInfo.longVersionCode.toString()
@@ -39,6 +42,7 @@ fun SystemInfoTab() {
         ) {
                 Text(text = "App Version: $versionName ($versionCode)")
                 Text(text = "Android Version: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
+                Text(text = "Local IP: $localIp")
                 Text(text = "Device: ${Build.MANUFACTURER} ${Build.MODEL}")
                 Text(text = "Device Name: ${Build.DEVICE}")
                 Text(text = "Product: ${Build.PRODUCT}")
@@ -66,4 +70,27 @@ fun SystemInfoTab() {
                 Text(text = "Update Time: ${java.util.Date(appInfo.lastUpdateTime)}")
         }
     }
+}
+
+private fun resolveLocalIpv4Address(): String? {
+    return runCatching {
+        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+        interfaces.toList()
+            .asSequence()
+            .filter { it.isUp && !it.isLoopback && !it.isVirtual }
+            .flatMap { it.inetAddresses.toList().asSequence() }
+            .filterIsInstance<Inet4Address>()
+            .map { it.hostAddress.orEmpty() }
+            .firstOrNull { ip ->
+                ip.isNotBlank() &&
+                    !ip.startsWith("127.") &&
+                    (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."))
+            }
+            ?: interfaces.toList()
+                .asSequence()
+                .flatMap { it.inetAddresses.toList().asSequence() }
+                .filterIsInstance<Inet4Address>()
+                .map { it.hostAddress.orEmpty() }
+                .firstOrNull { ip -> ip.isNotBlank() && !ip.startsWith("127.") }
+    }.getOrNull()
 }

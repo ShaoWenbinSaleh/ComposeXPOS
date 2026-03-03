@@ -234,11 +234,22 @@ actual object DebugPlatformActions {
                             }
                             statusText = "Connecting..."
                             CallingPlatform.connectToCallingMachine(host, port)
-                            statusText = "Target set: $host:$port"
+                            statusText = "Manual target set: $host:$port (connecting...)"
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(tr("Use Manual Target", "使用手动目标", "Gebruik handmatig doel"))
+                    }
+                    if (bridgeStatus.connected) {
+                        OutlinedButton(
+                            onClick = {
+                                CallingPlatform.disconnectCallingMachine()
+                                statusText = "Disconnected from CallingMachine"
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(tr("Disconnect", "断开连接", "Verbreken"))
+                        }
                     }
 
                     if (callingServices.isEmpty()) {
@@ -262,7 +273,11 @@ actual object DebugPlatformActions {
                                 onConnectCalling = { host, port ->
                                     statusText = "Connecting..."
                                     CallingPlatform.connectToCallingMachine(host, port)
-                                    statusText = "Target set: $host:$port"
+                                    statusText = "Target set: $host:$port (connecting...)"
+                                },
+                                onDisconnect = {
+                                    CallingPlatform.disconnectCallingMachine()
+                                    statusText = "Disconnected from CallingMachine"
                                 }
                             )
                         }
@@ -583,7 +598,8 @@ actual object DebugPlatformActions {
     private fun CallingDiscoveredServiceCard(
         service: WebDiscoveredService,
         isConnected: Boolean,
-        onConnectCalling: (String, Int) -> Unit
+        onConnectCalling: (String, Int) -> Unit,
+        onDisconnect: () -> Unit
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -603,6 +619,11 @@ actual object DebugPlatformActions {
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (isConnected) {
+                        OutlinedButton(onClick = onDisconnect) {
+                            Text(tr("Disconnect", "断开连接", "Verbreken"))
+                        }
+                    }
                     Button(
                         onClick = { onConnectCalling(service.host, service.port) },
                         enabled = !isConnected

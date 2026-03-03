@@ -25,7 +25,11 @@ fun normalizeOrderingDiscoveryHost(raw: String?): String {
     var clean = raw.orEmpty().trim()
     if (clean.isBlank()) return ""
 
-    clean = clean.removePrefix("http://").removePrefix("https://")
+    clean = clean
+        .removePrefix("http://")
+        .removePrefix("https://")
+        .removePrefix("ws://")
+        .removePrefix("wss://")
     clean = clean.substringBefore('/')
     if (clean.startsWith("[") && clean.contains("]")) {
         clean = clean.substringAfter('[').substringBefore(']')

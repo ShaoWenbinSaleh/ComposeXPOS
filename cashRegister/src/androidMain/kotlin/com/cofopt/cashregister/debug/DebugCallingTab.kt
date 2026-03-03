@@ -13,6 +13,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -27,9 +28,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.cofopt.cashregister.cmp.debug.isValidOrderingDiscoveryHost
+import com.cofopt.cashregister.cmp.debug.normalizeOrderingDiscoveryHost
 import com.cofopt.cashregister.network.CallingMachineBridge
 import com.cofopt.cashregister.network.ComposeXPOSDiscoveredService
-import com.cofopt.cashregister.network.ComposeXPOSNsdAdvertiser
 import com.cofopt.cashregister.network.ComposeXPOSNsdBrowser
 import com.cofopt.cashregister.utils.tr
 
@@ -51,6 +53,17 @@ internal fun CallingMachineTab() {
     }
 
     var statusText by remember { mutableStateOf<String?>(null) }
+    var manualHost by remember {
+        mutableStateOf(CashRegisterDebugConfig.callingMachineIp(context).ifBlank { "" })
+    }
+    var manualPort by remember {
+        mutableStateOf(
+            CashRegisterDebugConfig.callingMachinePort(context)
+                .takeIf { it in 1..65535 }
+                ?.toString()
+                ?: "9090"
+        )
+    }
     val callingServices = discoveredServices.filter { it.role == "CallingMachine" }
 
     Column(
@@ -88,6 +101,37 @@ internal fun CallingMachineTab() {
                     Text(tr("Discover CallingMachine", "发现叫号机", "Ontdek oproepmachine"))
                 }
 
+                OutlinedTextField(
+                    value = manualHost,
+                    onValueChange = { manualHost = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Manual Host") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = manualPort,
+                    onValueChange = { manualPort = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Manual Port") },
+                    singleLine = true
+                )
+                Button(
+                    onClick = {
+                        val host = normalizeCallingHostInput(manualHost)
+                        val port = manualPort.toIntOrNull()
+                        if (host.isBlank() || !isValidCallingHostInput(host) || port == null || port !in 1..65535) {
+                            statusText = "ERROR: Invalid manual host or port"
+                            return@Button
+                        }
+                        CashRegisterDebugConfig.saveCallingMachine(context, host, port)
+                        statusText = "Connecting..."
+                        bridge.connect(host, port)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(tr("Use Manual Target", "使用手动目标", "Gebruik handmatig doel"))
+                }
+
                 if (callingServices.isEmpty()) {
                     Text(
                         text = tr("No CallingMachine discovered yet", "尚未发现叫号机", "Nog geen oproepmachine gevonden"),
@@ -106,6 +150,10 @@ internal fun CallingMachineTab() {
                                 CashRegisterDebugConfig.saveCallingMachine(context, host, port)
                                 statusText = "Connecting..."
                                 bridge.connect(host, port)
+                            },
+                            onDisconnect = {
+                                bridge.disconnect()
+                                statusText = "Disconnected from CallingMachine"
                             }
                         )
                     }
@@ -127,6 +175,7 @@ internal fun CallingDiscoveredServiceCard(
     service: ComposeXPOSDiscoveredService,
     isConnected: Boolean,
     onConnectCalling: (String, Int) -> Unit,
+    onDisconnect: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -146,6 +195,11 @@ internal fun CallingDiscoveredServiceCard(
                 style = MaterialTheme.typography.bodyMedium
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (isConnected) {
+                    OutlinedButton(onClick = onDisconnect) {
+                        Text(tr("Disconnect", "断开连接", "Verbreken"))
+                    }
+                }
                 Button(
                     onClick = { onConnectCalling(service.host, service.port) },
                     enabled = !isConnected
@@ -161,4 +215,12 @@ internal fun CallingDiscoveredServiceCard(
             }
         }
     }
+}
+
+private fun normalizeCallingHostInput(raw: String?): String {
+    return normalizeOrderingDiscoveryHost(raw)
+}
+
+private fun isValidCallingHostInput(host: String): Boolean {
+    return isValidOrderingDiscoveryHost(host)
 }

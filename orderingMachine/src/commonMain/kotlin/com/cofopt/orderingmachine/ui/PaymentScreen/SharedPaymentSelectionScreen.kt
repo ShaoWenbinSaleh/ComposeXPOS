@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import com.cofopt.orderingmachine.CartItem
 import com.cofopt.orderingmachine.Language
 import com.cofopt.orderingmachine.PaymentMethod
+import com.cofopt.orderingmachine.cmp.EmojiVisual
 import com.cofopt.orderingmachine.currentTimeMillis
 import com.cofopt.orderingmachine.formatEuroAmount
 import com.cofopt.orderingmachine.localizedName
@@ -474,10 +475,12 @@ private fun PaymentMethodCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = emoji,
+            EmojiVisual(
+                emoji = emoji,
+                contentDescription = title,
                 modifier = Modifier.alpha(if (enabled) 1f else 0.5f),
-                fontSize = 86.sp
+                fallbackFontSize = 86.sp,
+                fallbackColor = if (enabled) Color.Unspecified else Color(0xFF9E9E9E)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -496,10 +499,12 @@ private fun PaymentMethodCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     subEmojis.forEach { subEmoji ->
-                        Text(
-                            text = subEmoji,
+                        EmojiVisual(
+                            emoji = subEmoji,
+                            contentDescription = null,
                             modifier = Modifier.alpha(if (enabled) 1f else 0.5f),
-                            fontSize = 22.sp
+                            fallbackFontSize = 22.sp,
+                            fallbackColor = if (enabled) Color.Unspecified else Color(0xFF9E9E9E)
                         )
                     }
                 }
