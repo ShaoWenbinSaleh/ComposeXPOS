@@ -27,6 +27,7 @@ import com.cofopt.orderingmachine.network.PrinterConfig
 import com.cofopt.orderingmachine.network.rememberOrderingPlatformContext
 import com.cofopt.orderingmachine.ui.common.components.DebugSectionCard
 import com.cofopt.orderingmachine.ui.common.components.LabeledRadioOption
+import kotlinx.browser.window
 
 actual object DebugScreenPlatform {
     @Composable
@@ -124,6 +125,9 @@ actual object DebugScreenPlatform {
 
         val deviceUuid = remember(context) { DeviceConfig.deviceUuid(context) }
         val deviceName = remember { DeviceConfig.androidDeviceName() }
+        val localHost = remember {
+            window.location.hostname.orEmpty().trim().ifBlank { "-" }
+        }
         val host = remember(context) { CashRegisterConfig.host(context).ifBlank { "-" } }
         val port = remember(context) { CashRegisterConfig.port(context) }
 
@@ -139,6 +143,7 @@ actual object DebugScreenPlatform {
             ) {
                 Text(text = "App Version: 1.0 (web)")
                 Text(text = "Platform: Web")
+                Text(text = "Local IP: $localHost")
                 Text(text = "Device: $deviceName")
                 Text(text = "Device UUID: $deviceUuid")
             }
