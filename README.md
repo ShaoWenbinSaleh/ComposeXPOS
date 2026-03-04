@@ -191,6 +191,8 @@ ComposeXPOS uses a LAN-first topology with explicit app roles:
 - Ordering probes use `/composexpos-ordering.json` and `/health`.
 - Calling probes use WebSocket viewer reachability checks.
 - Manual connection is always available and should be used as a fallback when browser network policies limit discovery.
+- On HTTPS pages, browser mixed-content and private-network policies can block `http://` and `ws://` LAN probes.
+  - For stable public-web deployments, use HTTPS/WSS reverse-proxy targets on port `443`.
 
 #### Advertising
 
@@ -223,6 +225,7 @@ Common defaults and conventions used by the current implementation:
 
 - CallingMachine WebSocket server: `9090`
 - OrderingMachine Android presence/config server: `19081`
+- HTTPS/WSS reverse-proxy gateway (recommended for public web): `443`
 - OrderingMachine Web dev instances: commonly `19082`, plus common dev ports (`3000`, `3001`, `4173`, `5173`, `5174`, etc.)
 - CashRegister LAN API default endpoint in local setups: commonly `:8080`
 
@@ -274,6 +277,8 @@ All default shared keys are placeholder values in:
 - `ERROR:network_unreachable`
   - Verify host is reachable from the current device (not wrong `localhost` scope).
   - Use target device `Local IP` + correct port.
+  - If CashRegister runs on `https://...`, do not target raw `http://`/`ws://` LAN endpoints directly from browser.
+    - Use reverse proxy over `https://` / `wss://` on `443`.
 - `no /cashregister API`
   - Expected when target is a Web OrderingMachine instance.
   - Selection is still valid; remote config push is simply unavailable.
@@ -281,8 +286,34 @@ All default shared keys are placeholder values in:
   - Browser private-network/CORS/HTTPS policies may block discovery probes.
   - Use manual target input.
 - Validate endpoint directly:
-  - `http://<host>:<port>/health`
-  - `http://<host>:<port>/composexpos-ordering.json`
+  - LAN/direct: `http://<host>:<port>/health`
+  - LAN/direct: `http://<host>:<port>/composexpos-ordering.json`
+  - Reverse proxy: `https://<host>/health`
+  - Reverse proxy: `https://<host>/composexpos-ordering.json`
+
+### 8) HTTPS + Reverse Proxy Deployment (Fastest Production-Friendly Web Setup)
+
+Recommended mapping (example):
+
+- `wss://call-xxx.composexpos.site` -> reverse proxy -> `ws://<ANDROID_CALLING_LAN_IP>:9090`
+- `https://ord-xxx.composexpos.site` -> reverse proxy -> `http://<ANDROID_ORDERING_LAN_IP>:19081`
+
+CashRegister Web should connect to these public TLS endpoints (port `443`) instead of direct LAN `http/ws`.
+
+Manual input examples in CashRegister Debug:
+
+- CallingMachine:
+  - `Manual Host`: `wss://call-xxx.composexpos.site` (or `call-xxx.composexpos.site`)
+  - `Manual Port`: `443` (or leave empty when scheme already implies `443`)
+- OrderingMachine:
+  - `Manual Host`: `https://ord-xxx.composexpos.site` (or `ord-xxx.composexpos.site`)
+  - `Manual Port`: `443` (or leave empty when scheme already implies `443`)
+
+Notes:
+
+- Browser auto-discovery is best-effort and LAN-focused; it is not a replacement for NSD across public internet.
+- For multi-instance environments, always differentiate targets by host + port (or subdomain), even when they resolve to the same gateway IP.
+- Keep `X-ComposeXPOS-Key` enabled end-to-end on `POST /cashregister` for secure remote config push.
 
 ## Open-Source Safety Notes
 
@@ -326,6 +357,11 @@ After the first successful run, preview URLs will be:
 - OrderingMachine Instance B: `https://composexpos.site/ComposeXPOS/orderingMachine-1/`
 - CashRegister: `https://composexpos.site/ComposeXPOS/cashRegister/`
 - CallingMachine: `https://composexpos.site/ComposeXPOS/callingMachine/`
+
+Important:
+
+- GitHub Pages only hosts static web assets. It does not expose Android device LAN APIs/WebSockets by itself.
+- To connect web clients to Android OrderingMachine/CallingMachine across networks, deploy a separate reverse proxy/gateway with TLS.
 
 ## Roadmap
 
