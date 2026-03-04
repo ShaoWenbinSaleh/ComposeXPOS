@@ -148,7 +148,7 @@ Related configs:
 - `GET /health`
 - `GET /cashregister`
 - `POST /cashregister`
-- Header auth: `X-Posroid-Key: <POSROID_LINK_SHARED_KEY>`
+- Header auth: `X-ComposeXPOS-Key: <COMPOSEXPOS_LINK_SHARED_KEY>`
 
 ### CallingMachine WebSocket
 
@@ -159,7 +159,7 @@ Related configs:
 
 Default placeholder key location:
 
-- `shared/src/commonMain/kotlin/com/cofopt/shared/network/PosroidLinkProtocol.kt`
+- `shared/src/commonMain/kotlin/com/cofopt/shared/network/ComposeXPOSLinkProtocol.kt`
 
 ## Connection Design and Usage Guide
 
@@ -188,7 +188,7 @@ ComposeXPOS uses a LAN-first topology with explicit app roles:
   - saved/manual host+port hints
   - current page host and loopback/emulator hosts
   - LAN prefix scanning (including common private prefixes and WebRTC-assisted hints when available)
-- Ordering probes use `/posroid-ordering.json` and `/health`.
+- Ordering probes use `/composexpos-ordering.json` and `/health`.
 - Calling probes use WebSocket viewer reachability checks.
 - Manual connection is always available and should be used as a fallback when browser network policies limit discovery.
 
@@ -230,7 +230,7 @@ Core endpoints:
 
 - OrderingMachine:
   - `GET /health`
-  - `GET /posroid-ordering.json`
+  - `GET /composexpos-ordering.json`
   - `GET /cashregister`
   - `POST /cashregister` (Android implementation)
 - CallingMachine:
@@ -242,9 +242,9 @@ Core endpoints:
 
 - `POST /cashregister` requires shared-key authentication.
 - Accepted key input:
-  - Header: `X-Posroid-Key`
+  - Header: `X-ComposeXPOS-Key`
   - Request body: `sharedKey`
-- Expected value: `POSROID_LINK_SHARED_KEY`
+- Expected value: `COMPOSEXPOS_LINK_SHARED_KEY`
 
 #### CallingMachine source link
 
@@ -258,7 +258,7 @@ Core endpoints:
 
 All default shared keys are placeholder values in:
 
-- `shared/src/commonMain/kotlin/com/cofopt/shared/network/PosroidLinkProtocol.kt`
+- `shared/src/commonMain/kotlin/com/cofopt/shared/network/ComposeXPOSLinkProtocol.kt`
 
 ### 6) Localhost, LAN IP, and Multi-Instance Rules
 
@@ -282,7 +282,7 @@ All default shared keys are placeholder values in:
   - Use manual target input.
 - Validate endpoint directly:
   - `http://<host>:<port>/health`
-  - `http://<host>:<port>/posroid-ordering.json`
+  - `http://<host>:<port>/composexpos-ordering.json`
 
 ## Open-Source Safety Notes
 
@@ -310,7 +310,6 @@ It automatically builds and deploys all web apps to GitHub Pages on every push t
 
 - `orderingMachine`
 - `orderingMachine-1` (same build as orderingMachine)
-- `orderingMachine-2` (same build as orderingMachine)
 - `cashRegister`
 - `callingMachine`
 
@@ -325,7 +324,6 @@ After the first successful run, preview URLs will be:
 - Home: `https://composexpos.site/ComposeXPOS/`
 - OrderingMachine: `https://composexpos.site/ComposeXPOS/orderingMachine/`
 - OrderingMachine Instance 1: `https://composexpos.site/ComposeXPOS/orderingMachine-1/`
-- OrderingMachine Instance 2: `https://composexpos.site/ComposeXPOS/orderingMachine-2/`
 - CashRegister: `https://composexpos.site/ComposeXPOS/cashRegister/`
 - CallingMachine: `https://composexpos.site/ComposeXPOS/callingMachine/`
 
