@@ -45,7 +45,7 @@ import com.cofopt.cashregister.network.getLocalIpv4Address
 import com.cofopt.cashregister.utils.tr
 import com.cofopt.shared.network.OrderingCashRegisterConfigRequest
 import com.cofopt.shared.network.OrderingCashRegisterConfigResponse
-import com.cofopt.shared.network.POSROID_LINK_SHARED_KEY
+import com.cofopt.shared.network.COMPOSEXPOS_LINK_SHARED_KEY
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -427,7 +427,7 @@ internal fun pushCashRegisterConfigToOrderingMachine(
             conn.readTimeout = 1800
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.setRequestProperty("X-Posroid-Key", POSROID_LINK_SHARED_KEY)
+            conn.setRequestProperty("X-ComposeXPOS-Key", COMPOSEXPOS_LINK_SHARED_KEY)
             conn.outputStream.use { os ->
                 os.write(requestBody.toByteArray(Charsets.UTF_8))
             }
@@ -552,7 +552,7 @@ private suspend fun discoverOrderingMachinesOverLan(
         if (!probeOrderingHealth(host, port)) return@scanOrderingTargets null
         ComposeXPOSDiscoveredService(
             role = "OrderingMachine",
-            serviceName = "POSROID-OrderingMachine",
+            serviceName = "COMPOSEXPOS-OrderingMachine",
             host = host,
             port = port,
             supportsCashRegisterConfigPush = true
@@ -685,7 +685,7 @@ private fun probeOrderingWebInstance(host: String, port: Int): Boolean {
 
 private fun probeOrderingDiscoveryJson(host: String, port: Int): Boolean {
     val conn = runCatching {
-        URL("http://$host:$port/posroid-ordering.json").openConnection() as HttpURLConnection
+        URL("http://$host:$port/composexpos-ordering.json").openConnection() as HttpURLConnection
     }.getOrNull() ?: return false
     return try {
         conn.requestMethod = "GET"

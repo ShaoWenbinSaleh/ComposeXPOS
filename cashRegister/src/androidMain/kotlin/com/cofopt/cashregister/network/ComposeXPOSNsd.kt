@@ -34,7 +34,7 @@ class ComposeXPOSNsdAdvertiser(context: Context) {
 
         val serviceInfo = NsdServiceInfo().apply {
             serviceType = COMPOSEXPOS_NSD_TYPE_CASHREGISTER
-            serviceName = "POSROID-CashRegister"
+            serviceName = "COMPOSEXPOS-CashRegister"
             this.port = port
         }
 

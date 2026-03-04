@@ -202,7 +202,7 @@ class LanOrderServer(
     private fun withCors(response: Response): Response {
         response.addHeader("Access-Control-Allow-Origin", "*")
         response.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        response.addHeader("Access-Control-Allow-Headers", "Content-Type, X-Posroid-Key")
+        response.addHeader("Access-Control-Allow-Headers", "Content-Type, X-ComposeXPOS-Key")
         response.addHeader("Access-Control-Max-Age", "86400")
         response.addHeader("Access-Control-Allow-Private-Network", "true")
         return response

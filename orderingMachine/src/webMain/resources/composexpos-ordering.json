@@ -1,6 +1,6 @@
 {
   "app": "OrderingMachine",
   "platform": "web",
-  "protocol": "posroid-ordering-discovery-v1",
+  "protocol": "composexpos-ordering-discovery-v1",
   "supportsCashRegisterConfigPush": false
 }

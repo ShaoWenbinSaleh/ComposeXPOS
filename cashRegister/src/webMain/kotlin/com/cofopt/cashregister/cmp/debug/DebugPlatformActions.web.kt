@@ -34,7 +34,7 @@ import com.cofopt.cashregister.network.OrderPayload
 import com.cofopt.cashregister.utils.tr
 import com.cofopt.shared.network.OrderingCashRegisterConfigRequest
 import com.cofopt.shared.network.OrderingCashRegisterConfigResponse
-import com.cofopt.shared.network.POSROID_LINK_SHARED_KEY
+import com.cofopt.shared.network.COMPOSEXPOS_LINK_SHARED_KEY
 import kotlinx.browser.window
 import kotlinx.coroutines.async
 import kotlinx.coroutines.await
@@ -440,7 +440,7 @@ actual object DebugPlatformActions {
                                 if (detectedWeb) {
                                     discoveredServices = (discoveredServices + WebDiscoveredService(
                                         role = "OrderingMachine",
-                                        serviceName = "POSROID-OrderingMachine-Web-$port",
+                                        serviceName = "COMPOSEXPOS-OrderingMachine-Web-$port",
                                         host = host,
                                         port = port,
                                         supportsRemoteConfig = false
@@ -488,7 +488,7 @@ actual object DebugPlatformActions {
                                 if (result.startsWith("OrderingMachine configured")) {
                                     discoveredServices = (discoveredServices + WebDiscoveredService(
                                         role = "OrderingMachine",
-                                        serviceName = "POSROID-OrderingMachine-$port",
+                                        serviceName = "COMPOSEXPOS-OrderingMachine-$port",
                                         host = host,
                                         port = port,
                                         supportsRemoteConfig = true
@@ -733,7 +733,7 @@ actual object DebugPlatformActions {
         return runCatching {
             val headers = Headers()
             headers.append("Content-Type", "application/json")
-            headers.append("X-Posroid-Key", POSROID_LINK_SHARED_KEY)
+            headers.append("X-ComposeXPOS-Key", COMPOSEXPOS_LINK_SHARED_KEY)
             val response = fetchTextWithTimeout(
                 url = endpoint,
                 method = "POST",
@@ -800,7 +800,7 @@ actual object DebugPlatformActions {
                 if (health?.ok == true && health.body.trim().equals("ok", ignoreCase = true)) {
                     return WebDiscoveredService(
                         role = "OrderingMachine",
-                        serviceName = "POSROID-OrderingMachine-${target.port}",
+                        serviceName = "COMPOSEXPOS-OrderingMachine-${target.port}",
                         host = target.host,
                         port = target.port,
                         supportsRemoteConfig = true
@@ -816,7 +816,7 @@ actual object DebugPlatformActions {
                     if (reachable) {
                         return WebDiscoveredService(
                             role = "OrderingMachine",
-                            serviceName = "POSROID-OrderingMachine-${target.port}",
+                            serviceName = "COMPOSEXPOS-OrderingMachine-${target.port}",
                             host = target.host,
                             port = target.port,
                             supportsRemoteConfig = true
@@ -829,9 +829,9 @@ actual object DebugPlatformActions {
             val discovery = probeOrderingDiscovery(target.host, target.port, timeoutMs = discoveryTimeoutMs)
             if (discovery != null) {
                 val serviceNamePrefix = if (discovery.supportsRemoteConfig) {
-                    "POSROID-OrderingMachine"
+                    "COMPOSEXPOS-OrderingMachine"
                 } else {
-                    "POSROID-OrderingMachine-Web"
+                    "COMPOSEXPOS-OrderingMachine-Web"
                 }
                 return WebDiscoveredService(
                     role = "OrderingMachine",
@@ -846,7 +846,7 @@ actual object DebugPlatformActions {
             if (webMarker) {
                 return WebDiscoveredService(
                     role = "OrderingMachine",
-                    serviceName = "POSROID-OrderingMachine-Web-${target.port}",
+                    serviceName = "COMPOSEXPOS-OrderingMachine-Web-${target.port}",
                     host = target.host,
                     port = target.port,
                     supportsRemoteConfig = false
@@ -858,13 +858,13 @@ actual object DebugPlatformActions {
                 val noCorsDiscoveryReachable = probeHttpPathNoCors(
                     host = target.host,
                     port = target.port,
-                    path = "/posroid-ordering.json",
+                    path = "/composexpos-ordering.json",
                     timeoutMs = 1000
                 )
                 if (noCorsDiscoveryReachable) {
                     return WebDiscoveredService(
                         role = "OrderingMachine",
-                        serviceName = "POSROID-OrderingMachine-Web-${target.port}",
+                        serviceName = "COMPOSEXPOS-OrderingMachine-Web-${target.port}",
                         host = target.host,
                         port = target.port,
                         supportsRemoteConfig = false
@@ -879,7 +879,7 @@ actual object DebugPlatformActions {
             if (response?.ok == true && response.body.trim().equals("ok", ignoreCase = true)) {
                 return WebDiscoveredService(
                     role = "OrderingMachine",
-                    serviceName = "POSROID-OrderingMachine-${target.port}",
+                    serviceName = "COMPOSEXPOS-OrderingMachine-${target.port}",
                     host = target.host,
                     port = target.port,
                     supportsRemoteConfig = true
@@ -897,7 +897,7 @@ actual object DebugPlatformActions {
                 if (reachable) {
                     return WebDiscoveredService(
                         role = "OrderingMachine",
-                        serviceName = "POSROID-OrderingMachine-${target.port}",
+                        serviceName = "COMPOSEXPOS-OrderingMachine-${target.port}",
                         host = target.host,
                         port = target.port,
                         supportsRemoteConfig = true
@@ -1077,7 +1077,7 @@ actual object DebugPlatformActions {
             if (!reachable) return@scanTargets null
             WebDiscoveredService(
                 role = "CallingMachine",
-                serviceName = "POSROID-CallingMachine-${target.port}",
+                serviceName = "COMPOSEXPOS-CallingMachine-${target.port}",
                 host = target.host,
                 port = target.port
             )
@@ -1438,7 +1438,7 @@ actual object DebugPlatformActions {
 
     private suspend fun probeOrderingDiscovery(host: String, port: Int, timeoutMs: Int): OrderingDiscoveryResult? {
         val response = fetchTextWithTimeout(
-            url = "http://$host:$port/posroid-ordering.json",
+            url = "http://$host:$port/composexpos-ordering.json",
             timeoutMs = timeoutMs
         ) ?: return null
         if (!response.ok) return null
@@ -1470,7 +1470,7 @@ actual object DebugPlatformActions {
         // CORS-restricted static hosting fallback for local OrderingMachine web endpoint.
         val isLocalHost = isLoopbackHost(host) || host.equals(window.location.hostname.orEmpty().trim(), ignoreCase = true)
         if (isLocalHost && port == 19082) {
-            return probeHttpPathNoCors(host = host, port = port, path = "/posroid-ordering.json", timeoutMs = timeoutMs)
+            return probeHttpPathNoCors(host = host, port = port, path = "/composexpos-ordering.json", timeoutMs = timeoutMs)
         }
         return false
     }
@@ -1534,7 +1534,7 @@ actual object DebugPlatformActions {
                     collectPrefix(candidate.address?.toString())
                 }
             }
-            rtc.createDataChannel("posroid-lan-probe")
+            rtc.createDataChannel("composexpos-lan-probe")
         }
 
         runCatching {

@@ -6,7 +6,7 @@ import android.net.nsd.NsdServiceInfo
 import android.util.Log
 import com.cofopt.shared.network.OrderingCashRegisterConfigRequest
 import com.cofopt.shared.network.OrderingCashRegisterConfigResponse
-import com.cofopt.shared.network.POSROID_LINK_SHARED_KEY
+import com.cofopt.shared.network.COMPOSEXPOS_LINK_SHARED_KEY
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.Serializable
@@ -136,7 +136,7 @@ class OrderingPresenceServer(
                     )
                 }
 
-                session.method == NanoHTTPD.Method.GET && session.uri == "/posroid-ordering.json" -> {
+                session.method == NanoHTTPD.Method.GET && session.uri == "/composexpos-ordering.json" -> {
                     corsResponse(
                         NanoHTTPD.newFixedLengthResponse(
                             NanoHTTPD.Response.Status.OK,
@@ -251,10 +251,10 @@ class OrderingPresenceServer(
         session: NanoHTTPD.IHTTPSession,
         request: OrderingCashRegisterConfigRequest
     ): Boolean {
-        val headerKey = session.headers["x-posroid-key"]?.trim().orEmpty()
+        val headerKey = session.headers["x-composexpos-key"]?.trim().orEmpty()
         val bodyKey = request.sharedKey?.trim().orEmpty()
         val provided = if (headerKey.isNotBlank()) headerKey else bodyKey
-        return provided == POSROID_LINK_SHARED_KEY
+        return provided == COMPOSEXPOS_LINK_SHARED_KEY
     }
 
     private fun isValidEndpoint(host: String, port: Int): Boolean {

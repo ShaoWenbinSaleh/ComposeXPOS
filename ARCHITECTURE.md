@@ -26,9 +26,9 @@ It splits core store workflows into three collaborative devices and maintains th
 graph LR
     OM["OrderingMachine<br/>Kiosk"] -->|"HTTP GET /menu,/dishes<br/>HTTP POST /orders"| CR["CashRegister<br/>Core Hub"]
     CR -->|"WebSocket:<br/>calling_snapshot/calling_alert"| CM["CallingMachine<br/>Pickup Screen"]
-    CR -->|"NSD publish:<br/>_posroid-cashregister._tcp."| LAN["Store LAN"]
-    OM -->|"NSD publish:<br/>_posroid-ordering._tcp."| LAN
-    CM -->|"NSD publish:<br/>_posroid-calling._tcp."| LAN
+    CR -->|"NSD publish:<br/>_composexpos-cashregister._tcp."| LAN["Store LAN"]
+    OM -->|"NSD publish:<br/>_composexpos-ordering._tcp."| LAN
+    CM -->|"NSD publish:<br/>_composexpos-calling._tcp."| LAN
     CR -->|"TCP 19081 signed command:<br/>SET_CASHREGISTER"| OM
     OM -. uses .-> SH["shared module"]
     CR -. uses .-> SH

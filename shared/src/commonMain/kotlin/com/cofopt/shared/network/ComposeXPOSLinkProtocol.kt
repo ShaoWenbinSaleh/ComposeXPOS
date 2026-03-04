@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
  * Open-source defaults for LAN handshake keys.
  * Replace these values in deployment before using in production.
  */
-const val POSROID_LINK_SHARED_KEY = "CHANGE_ME_POSROID_LINK_SHARED_KEY"
+const val COMPOSEXPOS_LINK_SHARED_KEY = "CHANGE_ME_COMPOSEXPOS_LINK_SHARED_KEY"
 const val CALLING_WS_SHARED_KEY = "CHANGE_ME_CALLING_WS_SHARED_KEY"
 
 @Serializable

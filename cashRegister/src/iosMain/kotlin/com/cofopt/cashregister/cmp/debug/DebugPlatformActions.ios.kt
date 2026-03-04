@@ -24,7 +24,7 @@ import com.cofopt.cashregister.network.OrderPayload
 import com.cofopt.cashregister.utils.tr
 import com.cofopt.shared.network.OrderingCashRegisterConfigRequest
 import com.cofopt.shared.network.OrderingCashRegisterConfigResponse
-import com.cofopt.shared.network.POSROID_LINK_SHARED_KEY
+import com.cofopt.shared.network.COMPOSEXPOS_LINK_SHARED_KEY
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -171,7 +171,7 @@ actual object DebugPlatformActions {
         val request = NSMutableURLRequest.requestWithURL(url).apply {
             setHTTPMethod("POST")
             setValue("application/json", forHTTPHeaderField = "Content-Type")
-            setValue(POSROID_LINK_SHARED_KEY, forHTTPHeaderField = "X-Posroid-Key")
+            setValue(COMPOSEXPOS_LINK_SHARED_KEY, forHTTPHeaderField = "X-ComposeXPOS-Key")
             setHTTPBody(requestPayload.encodeToByteArray().toNSData())
         }
 
