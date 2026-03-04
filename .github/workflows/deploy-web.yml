@@ -44,15 +44,16 @@ jobs:
           mkdir -p \
             _site/orderingMachine \
             _site/orderingMachine-1 \
-            _site/orderingMachine-2 \
             _site/cashRegister \
             _site/callingMachine
 
           cp -R orderingMachine/build/dist/js/productionExecutable/* _site/orderingMachine/
           cp -R orderingMachine/build/dist/js/productionExecutable/* _site/orderingMachine-1/
-          cp -R orderingMachine/build/dist/js/productionExecutable/* _site/orderingMachine-2/
           cp -R cashRegister/build/dist/js/productionExecutable/* _site/cashRegister/
           cp -R callingMachine/build/dist/js/productionExecutable/* _site/callingMachine/
+
+          sed -i 's/"app": "OrderingMachine"/"app": "OrderingMachine Instance A"/' _site/orderingMachine/composexpos-ordering.json
+          sed -i 's/"app": "OrderingMachine"/"app": "OrderingMachine Instance B"/' _site/orderingMachine-1/composexpos-ordering.json
 
           cat > _site/index.html <<'EOF'
           <!DOCTYPE html>
@@ -70,9 +71,8 @@ jobs:
           <body>
             <h1>ComposeXPOS Web Preview</h1>
             <ul>
-              <li><a href="./orderingMachine/">OrderingMachine</a></li>
-              <li><a href="./orderingMachine-1/">OrderingMachine Instance 1</a></li>
-              <li><a href="./orderingMachine-2/">OrderingMachine Instance 2</a></li>
+              <li><a href="./orderingMachine/">OrderingMachine Instance A</a></li>
+              <li><a href="./orderingMachine-1/">OrderingMachine Instance B</a></li>
               <li><a href="./cashRegister/">CashRegister</a></li>
               <li><a href="./callingMachine/">CallingMachine</a></li>
             </ul>

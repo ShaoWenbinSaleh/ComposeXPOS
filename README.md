@@ -309,7 +309,7 @@ This repo includes a workflow at:
 It automatically builds and deploys all web apps to GitHub Pages on every push to `main`:
 
 - `orderingMachine`
-- `orderingMachine-1` (same build as orderingMachine)
+- `orderingMachine-1` (same build as orderingMachine, labeled as Instance B)
 - `cashRegister`
 - `callingMachine`
 
@@ -322,8 +322,8 @@ It automatically builds and deploys all web apps to GitHub Pages on every push t
 After the first successful run, preview URLs will be:
 
 - Home: `https://composexpos.site/ComposeXPOS/`
-- OrderingMachine: `https://composexpos.site/ComposeXPOS/orderingMachine/`
-- OrderingMachine Instance 1: `https://composexpos.site/ComposeXPOS/orderingMachine-1/`
+- OrderingMachine Instance A: `https://composexpos.site/ComposeXPOS/orderingMachine/`
+- OrderingMachine Instance B: `https://composexpos.site/ComposeXPOS/orderingMachine-1/`
 - CashRegister: `https://composexpos.site/ComposeXPOS/cashRegister/`
 - CallingMachine: `https://composexpos.site/ComposeXPOS/callingMachine/`
 
