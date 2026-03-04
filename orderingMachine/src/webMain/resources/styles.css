@@ -30,16 +30,14 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
-body > :not(script) {
+#compose-viewport {
     width: min(100vw, calc(100vh * 9 / 16)) !important;
     height: min(100vh, calc(100vw * 16 / 9)) !important;
     max-width: 100vw !important;
     max-height: 100vh !important;
-}
-
-canvas {
-    display: block;
     background: #fff;
+    overflow: hidden;
+    position: relative;
 }
 
 canvas,

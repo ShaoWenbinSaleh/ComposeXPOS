@@ -6,7 +6,7 @@ import com.cofopt.orderingmachine.cmp.OrderingMachineApp
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
-    ComposeViewport {
+    ComposeViewport(viewportContainerId = "compose-viewport") {
         OrderingMachineApp()
     }
 }

@@ -3,7 +3,22 @@ package com.cofopt.orderingmachine.network
 import kotlinx.browser.window
 
 actual object OrderingPlatformPrefs {
-    private fun storageKey(prefsName: String, key: String): String = "ordering.$prefsName.$key"
+    private fun instanceId(): String {
+        val path = window.location.pathname.trim('/')
+        return path.substringBefore('/').ifBlank { "root" }
+    }
+
+    private fun storageKey(prefsName: String, key: String): String {
+        return "ordering.${instanceId()}.$prefsName.$key"
+    }
+
+    private fun defaultCashRegisterPortByInstance(defaultValue: Int): Int {
+        return when (instanceId()) {
+            "orderingMachine" -> 8080
+            "orderingMachine-1" -> 8081
+            else -> defaultValue
+        }
+    }
 
     actual fun getString(
         context: OrderingPlatformContext,
@@ -23,7 +38,12 @@ actual object OrderingPlatformPrefs {
         key: String,
         defaultValue: Int,
     ): Int {
-        return getString(context, prefsName, key, "").toIntOrNull() ?: defaultValue
+        val configured = getString(context, prefsName, key, "").toIntOrNull()
+        if (configured != null) return configured
+        if (prefsName == "cash_register_config" && key == "port") {
+            return defaultCashRegisterPortByInstance(defaultValue)
+        }
+        return defaultValue
     }
 
     actual fun getBoolean(

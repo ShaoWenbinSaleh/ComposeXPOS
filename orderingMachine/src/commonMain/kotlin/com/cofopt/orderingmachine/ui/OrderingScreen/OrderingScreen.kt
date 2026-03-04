@@ -137,8 +137,18 @@ fun OrderingScreen(
         val sheetScope = rememberCoroutineScope()
         val dialogProgress = remember { Animatable(0f) }
 
-        val categories = remember(menu) {
-            MenuCategory.entries.filter { category -> menu.any { it.category == category } }
+        val categoryOrder = remember {
+            mapOf(
+                MenuCategory.BURGERS to 0,
+                MenuCategory.AYAM_GORENG_NUGGETS to 1,
+                MenuCategory.BUBUR_NASI_LEMAK to 2,
+                MenuCategory.DRINKS to 3
+            )
+        }
+        val categories = remember(menu, categoryOrder) {
+            MenuCategory.entries
+                .filter { category -> menu.any { it.category == category } }
+                .sortedBy { category -> categoryOrder[category] ?: (100 + category.ordinal) }
         }
         var selectedCategory by remember { mutableStateOf(categories.firstOrNull() ?: MenuCategory.NOODLES) }
         LaunchedEffect(categories) {
