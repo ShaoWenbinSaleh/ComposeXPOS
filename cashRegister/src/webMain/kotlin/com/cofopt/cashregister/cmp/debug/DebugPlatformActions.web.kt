@@ -59,6 +59,7 @@ private const val ORDERING_PORT = 19081
 private const val ORDERING_CONNECTED_KEYS = "cashregister.ordering.connected.keys"
 private const val ORDERING_TARGET_HOST_KEY = "cashregister.ordering.target.host"
 private const val ORDERING_TARGET_PORT_KEY = "cashregister.ordering.target.port"
+private const val ORDERING_TARGET_SCHEME_KEY = "cashregister.ordering.target.scheme"
 private const val DISCOVERY_PREFIX_KEY = "cashregister.discovery.prefix"
 
 private external class AbortController {
@@ -89,6 +90,12 @@ private data class EndpointCandidate(
 
 private data class OrderingDiscoveryResult(
     val supportsRemoteConfig: Boolean
+)
+
+private data class OrderingManualTarget(
+    val scheme: String,
+    val host: String,
+    val port: Int
 )
 
 actual object DebugPlatformActions {
@@ -176,8 +183,10 @@ actual object DebugPlatformActions {
                                 return@OutlinedButton
                             }
                             if (prefix.isNotEmpty()) saveDiscoveryPrefix(prefix)
-                            val preferredHost = sanitizeHostInput(manualHost).takeIf { isValidHost(it) }
-                            val preferredPort = manualPort.toIntOrNull()
+                            val manualTarget = parseCallingManualTarget(manualHost, manualPort)
+                            val preferredHost = manualTarget?.host
+                                ?: sanitizeHostInput(manualHost).takeIf { isValidHost(it) }
+                            val preferredPort = manualTarget?.port ?: manualPort.toIntOrNull()
                             val targets = buildCallingDiscoveryTargets(prefix, preferredPort, preferredHost)
                             discovering = true
                             statusText = "Scanning ${targets.size} target(s)..."
@@ -226,12 +235,13 @@ actual object DebugPlatformActions {
                     )
                     Button(
                         onClick = {
-                            val host = sanitizeHostInput(manualHost)
-                            val port = manualPort.toIntOrNull()
-                            if (host.isBlank() || port == null || port !in 1..65535) {
+                            val manualTarget = parseCallingManualTarget(manualHost, manualPort)
+                            if (manualTarget == null) {
                                 statusText = "ERROR: Invalid manual host or port"
                                 return@Button
                             }
+                            val host = manualTarget.host
+                            val port = manualTarget.port
                             statusText = "Connecting..."
                             CallingPlatform.connectToCallingMachine(host, port)
                             statusText = "Manual target set: $host:$port (connecting...)"
@@ -363,14 +373,22 @@ actual object DebugPlatformActions {
                                 return@OutlinedButton
                             }
                             if (prefix.isNotEmpty()) saveDiscoveryPrefix(prefix)
-                            val preferredHost = sanitizeHostInput(manualHost).takeIf { isValidHost(it) }
-                            val preferredPort = manualPort.toIntOrNull()
+                            val manualTarget = parseOrderingManualTarget(manualHost, manualPort)
+                            val preferredHost = manualTarget?.host
+                                ?: sanitizeHostInput(manualHost).takeIf { isValidHost(it) }
+                            val preferredPort = manualTarget?.port ?: manualPort.toIntOrNull()
+                            val preferredScheme = manualTarget?.scheme
                             val targets = buildOrderingDiscoveryTargets(prefix, preferredPort, preferredHost)
                             discoveredServices = emptyList()
                             discovering = true
                             statusText = "Scanning ${targets.size} target(s)..."
                             scope.launch {
-                                val found = discoverOrderingMachines(prefix, preferredPort, preferredHost)
+                                val found = discoverOrderingMachines(
+                                    preferredPrefix = prefix,
+                                    preferredPort = preferredPort,
+                                    preferredHost = preferredHost,
+                                    preferredScheme = preferredScheme
+                                )
                                 discoveredServices = found
                                 statusText = if (found.isEmpty()) {
                                     "No OrderingMachine discovered yet"
@@ -414,13 +432,15 @@ actual object DebugPlatformActions {
                     )
                     Button(
                         onClick = {
-                            val host = sanitizeHostInput(manualHost)
-                            val port = manualPort.toIntOrNull()
-                            if (host.isBlank() || port == null || port !in 1..65535) {
+                            val manualTarget = parseOrderingManualTarget(manualHost, manualPort)
+                            if (manualTarget == null) {
                                 statusText = "ERROR: Invalid manual host or port"
                                 return@Button
                             }
-                            saveOrderingTarget(host, port)
+                            val host = manualTarget.host
+                            val port = manualTarget.port
+                            val scheme = manualTarget.scheme
+                            saveOrderingTarget(host, port, scheme)
                             scope.launch {
                                 val fromDiscoveredWeb = orderingServices.any {
                                     it.host == host && it.port == port && !it.supportsRemoteConfig
@@ -435,8 +455,18 @@ actual object DebugPlatformActions {
 
                                 val detectedWeb = likelyManualWeb ||
                                     fromDiscoveredWeb ||
-                                    (probeOrderingDiscovery(host, port, timeoutMs = 1200)?.supportsRemoteConfig == false) ||
-                                    (isLikelyWebAppPort(port) && probeHttpRootNoCors(host, port, timeoutMs = 1000))
+                                    (probeOrderingDiscovery(
+                                        host = host,
+                                        port = port,
+                                        timeoutMs = 1200,
+                                        scheme = scheme
+                                    )?.supportsRemoteConfig == false) ||
+                                    (isLikelyWebAppPort(port) && probeHttpRootNoCors(
+                                        host = host,
+                                        port = port,
+                                        timeoutMs = 1000,
+                                        scheme = scheme
+                                    ))
                                 if (detectedWeb) {
                                     discoveredServices = (discoveredServices + WebDiscoveredService(
                                         role = "OrderingMachine",
@@ -450,17 +480,23 @@ actual object DebugPlatformActions {
                                     val updated = orderingConnectionAdd(connectedKeys, host, port)
                                     connectedKeys = updated
                                     saveOrderingConnectedKeys(updated)
-                                    statusText = "OrderingMachine web instance selected: $host:$port (no /cashregister API)"
+                                    statusText = "OrderingMachine web instance selected: $scheme://$host:$port (no /cashregister API)"
                                     return@launch
                                 }
 
                                 // For manual targets, only push config after /health confirms Android-style endpoint.
                                 val health = fetchTextWithTimeout(
-                                    url = "http://${host.trim()}:$port/health",
+                                    url = buildOrderingUrl(scheme, host, port, "/health"),
                                     timeoutMs = 1200
                                 )
                                 val noCorsHealthReachable = if (health == null && port == ORDERING_PORT && !isLoopbackHost(host)) {
-                                    probeHttpPathNoCors(host = host, port = port, path = "/health", timeoutMs = 900)
+                                    probeHttpPathNoCors(
+                                        host = host,
+                                        port = port,
+                                        path = "/health",
+                                        timeoutMs = 900,
+                                        scheme = scheme
+                                    )
                                 } else {
                                     false
                                 }
@@ -479,6 +515,7 @@ actual object DebugPlatformActions {
 
                                 statusText = "Pushing CashRegister config to OrderingMachine..."
                                 val result = pushOrderingConfig(
+                                    orderingScheme = scheme,
                                     orderingHost = host,
                                     orderingPort = port,
                                     cashRegisterHost = endpoint.first,
@@ -528,7 +565,8 @@ actual object DebugPlatformActions {
                                 service = svc,
                                 isConnected = isConnected,
                                 onUseTarget = useTarget@{ host, port ->
-                                    saveOrderingTarget(host, port)
+                                    val scheme = inferOrderingScheme(host = host, port = port)
+                                    saveOrderingTarget(host, port, scheme)
                                     if (!svc.supportsRemoteConfig) {
                                         val updated = orderingConnectionAdd(
                                             connectedKeys = connectedKeys,
@@ -549,6 +587,7 @@ actual object DebugPlatformActions {
                                     statusText = "Pushing CashRegister config to OrderingMachine..."
                                     scope.launch {
                                         val result = pushOrderingConfig(
+                                            orderingScheme = scheme,
                                             orderingHost = host,
                                             orderingPort = port,
                                             cashRegisterHost = endpoint.first,
@@ -717,12 +756,13 @@ actual object DebugPlatformActions {
     }
 
     private suspend fun pushOrderingConfig(
+        orderingScheme: String,
         orderingHost: String,
         orderingPort: Int,
         cashRegisterHost: String,
         cashRegisterPort: Int
     ): String {
-        val endpoint = "http://${orderingHost.trim()}:$orderingPort/cashregister"
+        val endpoint = buildOrderingUrl(orderingScheme, orderingHost, orderingPort, "/cashregister")
         val body = json.encodeToString(
             OrderingCashRegisterConfigRequest(
                 host = cashRegisterHost.trim(),
@@ -770,7 +810,8 @@ actual object DebugPlatformActions {
     private suspend fun discoverOrderingMachines(
         preferredPrefix: String = "",
         preferredPort: Int? = null,
-        preferredHost: String? = null
+        preferredHost: String? = null,
+        preferredScheme: String? = null
     ): List<WebDiscoveredService> {
         fun normalizeFound(services: List<WebDiscoveredService>): List<WebDiscoveredService> {
             return services
@@ -790,11 +831,22 @@ actual object DebugPlatformActions {
                 normalizedHost == "10.0.3.2"
             val discoveryTimeoutMs = if (isLocalOrEmulatorHost) 2600 else 1200
             val webMarkerTimeoutMs = if (isLocalOrEmulatorHost) 2200 else 1100
+            val preferredForTarget = preferredScheme?.takeIf {
+                val cleanPreferredHost = sanitizeHostInput(preferredHost)
+                cleanPreferredHost.isNotBlank() &&
+                    cleanPreferredHost.equals(target.host, ignoreCase = true) &&
+                    (preferredPort == null || preferredPort == target.port)
+            }
+            val scheme = inferOrderingScheme(
+                host = target.host,
+                port = target.port,
+                preferredScheme = preferredForTarget
+            )
 
             // Fast-path for Android presence on LAN: check /health first on default port.
             if (!isLocalOrEmulatorHost && target.port == ORDERING_PORT) {
                 val health = fetchTextWithTimeout(
-                    url = "http://${target.host}:${target.port}/health",
+                    url = buildOrderingUrl(scheme, target.host, target.port, "/health"),
                     timeoutMs = 900
                 )
                 if (health?.ok == true && health.body.trim().equals("ok", ignoreCase = true)) {
@@ -811,7 +863,8 @@ actual object DebugPlatformActions {
                         host = target.host,
                         port = target.port,
                         path = "/health",
-                        timeoutMs = 900
+                        timeoutMs = 900,
+                        scheme = scheme
                     )
                     if (reachable) {
                         return WebDiscoveredService(
@@ -826,7 +879,12 @@ actual object DebugPlatformActions {
                 return null
             }
 
-            val discovery = probeOrderingDiscovery(target.host, target.port, timeoutMs = discoveryTimeoutMs)
+            val discovery = probeOrderingDiscovery(
+                host = target.host,
+                port = target.port,
+                timeoutMs = discoveryTimeoutMs,
+                scheme = scheme
+            )
             if (discovery != null) {
                 val serviceNamePrefix = if (discovery.supportsRemoteConfig) {
                     "COMPOSEXPOS-OrderingMachine"
@@ -842,7 +900,12 @@ actual object DebugPlatformActions {
                 )
             }
 
-            val webMarker = probeOrderingWebHtmlMarker(target.host, target.port, timeoutMs = webMarkerTimeoutMs)
+            val webMarker = probeOrderingWebHtmlMarker(
+                host = target.host,
+                port = target.port,
+                timeoutMs = webMarkerTimeoutMs,
+                scheme = scheme
+            )
             if (webMarker) {
                 return WebDiscoveredService(
                     role = "OrderingMachine",
@@ -859,7 +922,8 @@ actual object DebugPlatformActions {
                     host = target.host,
                     port = target.port,
                     path = "/composexpos-ordering.json",
-                    timeoutMs = 1000
+                    timeoutMs = 1000,
+                    scheme = scheme
                 )
                 if (noCorsDiscoveryReachable) {
                     return WebDiscoveredService(
@@ -873,7 +937,7 @@ actual object DebugPlatformActions {
             }
 
             val response = fetchTextWithTimeout(
-                url = "http://${target.host}:${target.port}/health",
+                url = buildOrderingUrl(scheme, target.host, target.port, "/health"),
                 timeoutMs = if (isLocalOrEmulatorHost) 1800 else 1500
             )
             if (response?.ok == true && response.body.trim().equals("ok", ignoreCase = true)) {
@@ -892,7 +956,8 @@ actual object DebugPlatformActions {
                     host = target.host,
                     port = target.port,
                     path = "/health",
-                    timeoutMs = 1000
+                    timeoutMs = 1000,
+                    scheme = scheme
                 )
                 if (reachable) {
                     return WebDiscoveredService(
@@ -1191,10 +1256,15 @@ actual object DebugPlatformActions {
         val queryPort = queryParam("cashregisterPort")?.toIntOrNull()
             ?: queryParam("cash_register_port")?.toIntOrNull()
         val browserPort = window.location.port.orEmpty().toIntOrNull()
+        val protocolDefaultPort = when (window.location.protocol) {
+            "https:" -> 443
+            "http:" -> 80
+            else -> 8080
+        }
         val port = queryPort
             ?.takeIf { it in 1..65535 }
             ?: browserPort?.takeIf { it in 1..65535 }
-            ?: 8080
+            ?: protocolDefaultPort
         return cleanHost to port
     }
 
@@ -1433,12 +1503,60 @@ actual object DebugPlatformActions {
     }
 
     private fun isLikelyWebAppPort(port: Int): Boolean {
-        return port in listOf(19080, 19082, 3000, 3001, 4173, 5173, 5174, 8080, 8081, 8082)
+        return port in listOf(80, 443, 19080, 19082, 3000, 3001, 4173, 5173, 5174, 8080, 8081, 8082)
     }
 
-    private suspend fun probeOrderingDiscovery(host: String, port: Int, timeoutMs: Int): OrderingDiscoveryResult? {
+    private fun normalizeOrderingScheme(raw: String?): String? {
+        return when (raw.orEmpty().trim().lowercase()) {
+            "http", "ws" -> "http"
+            "https", "wss" -> "https"
+            else -> null
+        }
+    }
+
+    private fun inferOrderingScheme(host: String, port: Int, preferredScheme: String? = null): String {
+        val explicit = normalizeOrderingScheme(preferredScheme)
+        if (explicit != null) return explicit
+        val savedHost = loadOrderingTargetHost()
+        val savedPort = loadOrderingTargetPort()
+        val savedScheme = loadOrderingTargetScheme()
+        if (savedScheme != null &&
+            savedHost != null &&
+            savedHost.equals(host.trim(), ignoreCase = true) &&
+            savedPort == port
+        ) {
+            return savedScheme
+        }
+        if (port == 443) return "https"
+        if (isLoopbackHost(host) || isIpv4Address(host)) return "http"
+        return if (window.location.protocol == "https:") "https" else "http"
+    }
+
+    private fun buildOrderingUrl(
+        scheme: String,
+        host: String,
+        port: Int,
+        path: String
+    ): String {
+        val normalizedScheme = normalizeOrderingScheme(scheme) ?: "http"
+        val normalizedPath = if (path.startsWith("/")) path else "/$path"
+        val trimmedHost = host.trim()
+        val normalizedHost = if (trimmedHost.contains(':') && !trimmedHost.startsWith("[") && !trimmedHost.endsWith("]")) {
+            "[$trimmedHost]"
+        } else {
+            trimmedHost
+        }
+        return "$normalizedScheme://$normalizedHost:$port$normalizedPath"
+    }
+
+    private suspend fun probeOrderingDiscovery(
+        host: String,
+        port: Int,
+        timeoutMs: Int,
+        scheme: String
+    ): OrderingDiscoveryResult? {
         val response = fetchTextWithTimeout(
-            url = "http://$host:$port/composexpos-ordering.json",
+            url = buildOrderingUrl(scheme, host, port, "/composexpos-ordering.json"),
             timeoutMs = timeoutMs
         ) ?: return null
         if (!response.ok) return null
@@ -1454,15 +1572,20 @@ actual object DebugPlatformActions {
         return OrderingDiscoveryResult(supportsRemoteConfig = supportsRemoteConfig)
     }
 
-    private suspend fun probeOrderingWebHtmlMarker(host: String, port: Int, timeoutMs: Int): Boolean {
+    private suspend fun probeOrderingWebHtmlMarker(
+        host: String,
+        port: Int,
+        timeoutMs: Int,
+        scheme: String
+    ): Boolean {
         if (!isLikelyWebAppPort(port)) return false
         val root = fetchTextWithTimeout(
-            url = "http://$host:$port/",
+            url = buildOrderingUrl(scheme, host, port, "/"),
             timeoutMs = timeoutMs
         )
         if (isOrderingWebHtml(root?.body.orEmpty())) return true
         val index = fetchTextWithTimeout(
-            url = "http://$host:$port/index.html",
+            url = buildOrderingUrl(scheme, host, port, "/index.html"),
             timeoutMs = timeoutMs
         )
         if (isOrderingWebHtml(index?.body.orEmpty())) return true
@@ -1470,7 +1593,13 @@ actual object DebugPlatformActions {
         // CORS-restricted static hosting fallback for local OrderingMachine web endpoint.
         val isLocalHost = isLoopbackHost(host) || host.equals(window.location.hostname.orEmpty().trim(), ignoreCase = true)
         if (isLocalHost && port == 19082) {
-            return probeHttpPathNoCors(host = host, port = port, path = "/composexpos-ordering.json", timeoutMs = timeoutMs)
+            return probeHttpPathNoCors(
+                host = host,
+                port = port,
+                path = "/composexpos-ordering.json",
+                timeoutMs = timeoutMs,
+                scheme = scheme
+            )
         }
         return false
     }
@@ -1484,11 +1613,22 @@ actual object DebugPlatformActions {
         return hasOrderingTitle && hasOrderingBundle
     }
 
-    private suspend fun probeHttpRootNoCors(host: String, port: Int, timeoutMs: Int): Boolean {
-        return probeHttpPathNoCors(host = host, port = port, path = "/", timeoutMs = timeoutMs)
+    private suspend fun probeHttpRootNoCors(
+        host: String,
+        port: Int,
+        timeoutMs: Int,
+        scheme: String
+    ): Boolean {
+        return probeHttpPathNoCors(host = host, port = port, path = "/", timeoutMs = timeoutMs, scheme = scheme)
     }
 
-    private suspend fun probeHttpPathNoCors(host: String, port: Int, path: String, timeoutMs: Int): Boolean {
+    private suspend fun probeHttpPathNoCors(
+        host: String,
+        port: Int,
+        path: String,
+        timeoutMs: Int,
+        scheme: String = "http"
+    ): Boolean {
         val controller = AbortController()
         val timerId = window.setTimeout(
             handler = { controller.abort() },
@@ -1499,7 +1639,8 @@ actual object DebugPlatformActions {
             init.asDynamic().mode = "no-cors"
             init.asDynamic().signal = controller.signal
             val normalizedPath = if (path.startsWith("/")) path else "/$path"
-            window.fetch("http://$host:$port$normalizedPath", init).await()
+            val url = buildOrderingUrl(scheme = scheme, host = host, port = port, path = normalizedPath)
+            window.fetch(url, init).await()
             true
         } catch (_: Throwable) {
             false
@@ -1560,10 +1701,114 @@ actual object DebugPlatformActions {
         }
     }
 
-    private fun saveOrderingTarget(host: String, port: Int) {
+    private fun parseCallingManualTarget(rawHostInput: String, rawPortInput: String): EndpointCandidate? {
+        val hostInput = rawHostInput.trim()
+        if (hostInput.isBlank()) return null
+
+        val secureScheme = when {
+            hostInput.startsWith("wss://", ignoreCase = true) -> true
+            hostInput.startsWith("https://", ignoreCase = true) -> true
+            hostInput.startsWith("ws://", ignoreCase = true) -> false
+            hostInput.startsWith("http://", ignoreCase = true) -> false
+            else -> null
+        }
+        val authority = (if (hostInput.contains("://")) hostInput.substringAfter("://") else hostInput)
+            .substringBefore('/')
+            .trim()
+        if (authority.isBlank()) return null
+
+        var hostPart = authority
+        var portFromAuthority: Int? = null
+        if (authority.startsWith("[") && authority.contains("]")) {
+            val closeIndex = authority.indexOf(']')
+            if (closeIndex <= 1) return null
+            hostPart = authority.substring(1, closeIndex)
+            val suffix = authority.substring(closeIndex + 1)
+            portFromAuthority = if (suffix.startsWith(":")) {
+                suffix.substringAfter(':').toIntOrNull()
+            } else {
+                null
+            }
+        } else {
+            val firstColon = authority.indexOf(':')
+            val lastColon = authority.lastIndexOf(':')
+            if (firstColon > 0 && firstColon == lastColon) {
+                hostPart = authority.substringBefore(':')
+                portFromAuthority = authority.substringAfter(':').toIntOrNull()
+            }
+        }
+
+        val host = sanitizeHostInput(hostPart)
+        if (!isValidHost(host)) return null
+        val manualPort = rawPortInput.trim().toIntOrNull()?.takeIf { it in 1..65535 }
+        val port = manualPort ?: portFromAuthority ?: if (secureScheme == true) 443 else CALLING_PORT
+        if (port !in 1..65535) return null
+        return EndpointCandidate(host = host, port = port)
+    }
+
+    private fun parseOrderingManualTarget(rawHostInput: String, rawPortInput: String): OrderingManualTarget? {
+        val hostInput = rawHostInput.trim()
+        if (hostInput.isBlank()) return null
+
+        val schemeFromInput = when {
+            hostInput.startsWith("https://", ignoreCase = true) -> "https"
+            hostInput.startsWith("http://", ignoreCase = true) -> "http"
+            else -> null
+        }
+        val authority = (if (schemeFromInput != null) hostInput.substringAfter("://") else hostInput)
+            .substringBefore('/')
+            .trim()
+        if (authority.isBlank()) return null
+
+        var hostPart = authority
+        var portFromAuthority: Int? = null
+        if (authority.startsWith("[") && authority.contains("]")) {
+            val closeIndex = authority.indexOf(']')
+            if (closeIndex <= 1) return null
+            hostPart = authority.substring(1, closeIndex)
+            val suffix = authority.substring(closeIndex + 1)
+            portFromAuthority = if (suffix.startsWith(":")) {
+                suffix.substringAfter(':').toIntOrNull()
+            } else {
+                null
+            }
+        } else {
+            val firstColon = authority.indexOf(':')
+            val lastColon = authority.lastIndexOf(':')
+            if (firstColon > 0 && firstColon == lastColon) {
+                hostPart = authority.substringBefore(':')
+                portFromAuthority = authority.substringAfter(':').toIntOrNull()
+            }
+        }
+
+        val host = sanitizeHostInput(hostPart)
+        if (!isValidHost(host)) return null
+
+        val manualPort = rawPortInput.trim().toIntOrNull()?.takeIf { it in 1..65535 }
+        val inferredPort = manualPort ?: portFromAuthority
+        val rememberedScheme = loadOrderingTarget()
+            ?.takeIf { it.host.equals(host, ignoreCase = true) && (inferredPort == null || it.port == inferredPort) }
+            ?.scheme
+        val scheme = normalizeOrderingScheme(schemeFromInput)
+            ?: rememberedScheme
+            ?: if (window.location.protocol == "https:") "https" else "http"
+        val port = inferredPort ?: if (scheme == "https") 443 else ORDERING_PORT
+        if (port !in 1..65535) return null
+
+        return OrderingManualTarget(
+            scheme = scheme,
+            host = host,
+            port = port
+        )
+    }
+
+    private fun saveOrderingTarget(host: String, port: Int, scheme: String? = null) {
+        val normalizedHost = host.trim()
+        val normalizedScheme = normalizeOrderingScheme(scheme) ?: inferOrderingScheme(normalizedHost, port)
         runCatching {
-            window.localStorage.setItem(ORDERING_TARGET_HOST_KEY, host.trim())
+            window.localStorage.setItem(ORDERING_TARGET_HOST_KEY, normalizedHost)
             window.localStorage.setItem(ORDERING_TARGET_PORT_KEY, port.toString())
+            window.localStorage.setItem(ORDERING_TARGET_SCHEME_KEY, normalizedScheme)
         }
     }
 
@@ -1577,6 +1822,19 @@ actual object DebugPlatformActions {
         return runCatching {
             window.localStorage.getItem(ORDERING_TARGET_PORT_KEY)?.toIntOrNull()
         }.getOrNull()?.takeIf { it in 1..65535 }
+    }
+
+    private fun loadOrderingTargetScheme(): String? {
+        return runCatching {
+            window.localStorage.getItem(ORDERING_TARGET_SCHEME_KEY)
+        }.getOrNull()?.let(::normalizeOrderingScheme)
+    }
+
+    private fun loadOrderingTarget(): OrderingManualTarget? {
+        val host = loadOrderingTargetHost() ?: return null
+        val port = loadOrderingTargetPort() ?: return null
+        val scheme = loadOrderingTargetScheme() ?: inferOrderingScheme(host = host, port = port)
+        return OrderingManualTarget(scheme = scheme, host = host, port = port)
     }
 
     private fun loadOrderingConnectedKeys(): Set<String> {

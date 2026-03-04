@@ -126,7 +126,8 @@ actual object DebugScreenPlatform {
         val deviceUuid = remember(context) { DeviceConfig.deviceUuid(context) }
         val deviceName = remember { DeviceConfig.androidDeviceName() }
         val localHost = remember {
-            window.location.hostname.orEmpty().trim().ifBlank { "-" }
+            val host = window.location.hostname.orEmpty().trim()
+            if (isLikelyLocalLanHost(host)) host else "-"
         }
         val host = remember(context) { CashRegisterConfig.host(context).ifBlank { "-" } }
         val port = remember(context) { CashRegisterConfig.port(context) }
@@ -162,4 +163,20 @@ actual object DebugScreenPlatform {
 
     @Composable
     actual fun rememberExitAppAction(): (() -> Unit)? = null
+}
+
+private fun isLikelyLocalLanHost(host: String): Boolean {
+    val clean = host.trim().lowercase()
+    if (clean.isBlank()) return false
+    if (clean == "localhost" || clean == "127.0.0.1" || clean == "::1") return true
+    val parts = clean.split('.')
+    if (parts.size != 4) return false
+    val a = parts[0].toIntOrNull() ?: return false
+    val b = parts[1].toIntOrNull() ?: return false
+    return when {
+        a == 10 -> true
+        a == 192 && b == 168 -> true
+        a == 172 && b in 16..31 -> true
+        else -> false
+    }
 }

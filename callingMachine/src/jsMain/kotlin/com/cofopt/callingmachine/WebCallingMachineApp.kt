@@ -17,6 +17,9 @@ import kotlin.js.JSON
 import org.w3c.dom.WebSocket
 import org.w3c.dom.events.Event
 
+private const val CALLING_TARGET_HOST_KEY = "cashregister.calling.target.host"
+private const val CALLING_TARGET_PORT_KEY = "cashregister.calling.target.port"
+
 @Composable
 actual fun WebCallingMachineApp() {
     var reconnectNonce by remember { mutableIntStateOf(0) }
@@ -32,12 +35,19 @@ actual fun WebCallingMachineApp() {
     var alertOverlayNonce by remember { mutableIntStateOf(0) }
     var newPreparingNumbers by remember { mutableStateOf(emptySet<Int>()) }
 
-    val wsUrl = remember { resolveCallingMachineWsUrl() }
+    var wsUrl by remember { mutableStateOf(resolveCallingMachineWsUrlOrNull()) }
     val localIpText = remember { resolveLocalIpForWeb() }
 
     DisposableEffect(wsUrl, reconnectNonce) {
-        val socket = WebSocket(wsUrl)
-        statusText = "Connecting: $wsUrl"
+        val targetUrl = wsUrl
+        if (targetUrl.isNullOrBlank()) {
+            isConnected = false
+            statusText = "No Calling source configured. Use ?host=<LAN_IP>&port=9090 or set target in CashRegister Debug."
+            return@DisposableEffect onDispose { }
+        }
+
+        val socket = WebSocket(targetUrl)
+        statusText = "Connecting: $targetUrl"
         isConnected = false
 
         socket.onopen = { _: Event ->
@@ -119,9 +129,21 @@ actual fun WebCallingMachineApp() {
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (wsUrl.contains("mode=viewer").not()) {
+    LaunchedEffect(wsUrl) {
+        val current = wsUrl
+        if (current.isNullOrBlank()) return@LaunchedEffect
+        if (current.contains("mode=viewer").not()) {
             statusText = "Tip: add ?mode=viewer to ws endpoint."
+        }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val next = resolveCallingMachineWsUrlOrNull()
+            if (next != wsUrl) {
+                wsUrl = next
+                reconnectNonce++
+            }
+            delay(1500)
         }
     }
 
@@ -139,24 +161,75 @@ actual fun WebCallingMachineApp() {
     )
 }
 
-private fun resolveCallingMachineWsUrl(): String {
+private fun resolveCallingMachineWsUrlOrNull(): String? {
     val params = parseQuery(window.location.search.orEmpty())
     val fromQuery = params["ws"].orEmpty()
     if (fromQuery.startsWith("ws://") || fromQuery.startsWith("wss://")) {
-        return fromQuery
+        return ensureViewerMode(fromQuery)
     }
 
-    val host = params["host"].orEmpty().ifBlank {
-        window.location.hostname.orEmpty().ifBlank { "127.0.0.1" }
+    val queryHost = params["host"].orEmpty().trim()
+    val queryPort = params["port"]?.toIntOrNull()?.takeIf { it in 1..65535 }
+    if (queryHost.isNotBlank()) {
+        val scheme = if (window.location.protocol == "https:") "wss" else "ws"
+        val port = queryPort ?: 9090
+        return "$scheme://$queryHost:$port/?mode=viewer"
     }
-    val port = params["port"]?.toIntOrNull()?.takeIf { it in 1..65535 } ?: 9090
+
+    val savedHost = runCatching {
+        window.localStorage.getItem(CALLING_TARGET_HOST_KEY)
+    }.getOrNull().orEmpty().trim()
+    val savedPort = runCatching {
+        window.localStorage.getItem(CALLING_TARGET_PORT_KEY)?.toIntOrNull()
+    }.getOrNull()?.takeIf { it in 1..65535 }
+    if (savedHost.isNotBlank() && savedPort != null) {
+        val scheme = if (window.location.protocol == "https:") "wss" else "ws"
+        return "$scheme://$savedHost:$savedPort/?mode=viewer"
+    }
+
+    val host = window.location.hostname.orEmpty().trim()
+    if (!isLikelyLocalLanHost(host)) return null
     val scheme = if (window.location.protocol == "https:") "wss" else "ws"
-    return "$scheme://$host:$port/?mode=viewer"
+    return "$scheme://$host:9090/?mode=viewer"
+}
+
+private fun ensureViewerMode(raw: String): String {
+    val url = raw.trim()
+    if (url.isBlank()) return url
+    if (url.contains("mode=viewer")) return url
+    val separator = if (url.contains("?")) "&" else "?"
+    return "${url}${separator}mode=viewer"
 }
 
 private fun resolveLocalIpForWeb(): String {
     val host = window.location.hostname.orEmpty().trim()
+    if (!isLikelyLocalLanHost(host)) return "-"
     return if (host.isBlank()) "-" else host
+}
+
+private fun isLikelyLocalLanHost(host: String): Boolean {
+    val clean = host.trim().lowercase()
+    if (clean.isBlank()) return false
+    if (clean == "localhost" || clean == "127.0.0.1" || clean == "::1") return true
+    if (!isIpv4Address(clean)) return false
+    val parts = clean.split('.')
+    val a = parts[0].toIntOrNull() ?: return false
+    val b = parts[1].toIntOrNull() ?: return false
+    return when {
+        a == 10 -> true
+        a == 192 && b == 168 -> true
+        a == 172 && b in 16..31 -> true
+        else -> false
+    }
+}
+
+private fun isIpv4Address(host: String): Boolean {
+    val parts = host.trim().split('.')
+    if (parts.size != 4) return false
+    return parts.all { part ->
+        val value = part.toIntOrNull() ?: return@all false
+        value in 0..255
+    }
 }
 
 @Suppress("UnsafeCastFromDynamic")
