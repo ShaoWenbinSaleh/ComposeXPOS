@@ -1,4 +1,4 @@
-# 🍟 ComposeXPOS - Open Source Kotlin Multiplatform POS System
+# 🍟 ComposeXPOS - Open Source Compose Multiplatform POS System
 
 <div align="center">
 
@@ -322,12 +322,12 @@ It automatically builds and deploys all web apps to GitHub Pages on every push t
 
 After the first successful run, preview URLs will be:
 
-- Home: `https://<your-github-username>.github.io/ComposeXPOS/`
-- OrderingMachine: `https://<your-github-username>.github.io/ComposeXPOS/orderingMachine/`
-- OrderingMachine Instance 1: `https://<your-github-username>.github.io/ComposeXPOS/orderingMachine-1/`
-- OrderingMachine Instance 2: `https://<your-github-username>.github.io/ComposeXPOS/orderingMachine-2/`
-- CashRegister: `https://<your-github-username>.github.io/ComposeXPOS/cashRegister/`
-- CallingMachine: `https://<your-github-username>.github.io/ComposeXPOS/callingMachine/`
+- Home: `https://composexpos.site/ComposeXPOS/`
+- OrderingMachine: `https://composexpos.site/ComposeXPOS/orderingMachine/`
+- OrderingMachine Instance 1: `https://composexpos.site/ComposeXPOS/orderingMachine-1/`
+- OrderingMachine Instance 2: `https://composexpos.site/ComposeXPOS/orderingMachine-2/`
+- CashRegister: `https://composexpos.site/ComposeXPOS/cashRegister/`
+- CallingMachine: `https://composexpos.site/ComposeXPOS/callingMachine/`
 
 ## Roadmap
 
