@@ -14,6 +14,14 @@ A LAN-first **Compose Multiplatform POS Suite** for Android / iOS / Web.
 ComposeXPOS is an open-source **restaurant POS system** built with **Kotlin Multiplatform** and **Compose Multiplatform**.
 It provides a complete **self-order kiosk + cashier + pickup calling screen** workflow for **Android, iOS, and Web** deployments.
 
+## Live Preview (Web version)
+
+- Home: [https://composexpos.site/](https://composexpos.site/)
+- OrderingMachine Instance A: [https://composexpos.site/orderingMachine/](https://composexpos.site/orderingMachine/)
+- OrderingMachine Instance B: [https://composexpos.site/orderingMachine-1/](https://composexpos.site/orderingMachine-1/)
+- CashRegister: [https://composexpos.site/cashRegister/](https://composexpos.site/cashRegister/)
+- CallingMachine: [https://composexpos.site/callingMachine/](https://composexpos.site/callingMachine/)
+
 ## 🔍 Keywords
 
 `Kotlin Multiplatform POS`, `Compose Multiplatform POS`, `Open Source POS`, `Restaurant POS`, `Self-Order Kiosk`, `Cash Register App`, `Pickup Calling Screen`, `LAN POS System`, `Android POS`, `iOS POS`, `Web POS`
@@ -21,6 +29,7 @@ It provides a complete **self-order kiosk + cashier + pickup calling screen** wo
 ## Table of Contents
 
 - [Overview](#overview)
+- [Live Preview](#live-preview)
 - [Features](#features)
 - [Use Cases](#use-cases)
 - [Modules](#modules)
@@ -376,13 +385,7 @@ It automatically builds and deploys all web apps to GitHub Pages on every push t
 2. Go to **Settings → Pages**.
 3. In **Build and deployment**, set **Source = GitHub Actions**.
 
-After the first successful run, preview URLs will be:
-
-- Home: `https://composexpos.site/ComposeXPOS/`
-- OrderingMachine Instance A: `https://composexpos.site/ComposeXPOS/orderingMachine/`
-- OrderingMachine Instance B: `https://composexpos.site/ComposeXPOS/orderingMachine-1/`
-- CashRegister: `https://composexpos.site/ComposeXPOS/cashRegister/`
-- CallingMachine: `https://composexpos.site/ComposeXPOS/callingMachine/`
+Live preview links are listed at the beginning of this document in [Live Preview](#live-preview).
 
 Important:
 
