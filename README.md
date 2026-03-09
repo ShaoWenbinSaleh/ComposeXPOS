@@ -25,6 +25,7 @@ It provides a complete **self-order kiosk + cashier + pickup calling screen** wo
 - [Use Cases](#use-cases)
 - [Modules](#modules)
 - [Architecture](#architecture)
+- [Why Local-First Instead of Cloud-First](#why-local-first-instead-of-cloud-first)
 - [Current Platform Targets](#current-platform-targets)
 - [Quick Start](#quick-start)
 - [iOS Host App (Xcode)](#ios-host-app-xcode)
@@ -79,6 +80,31 @@ graph LR
     CR -->|"WebSocket: calling_snapshot / calling_alert"| CM["CallingMachine"]
     CR -->|"GET/POST /cashregister"| OM
 ```
+
+## Why Local-First Instead of Cloud-First
+
+ComposeXPOS is intentionally designed as a **local-first communication system** for in-store operations.
+
+In high-throughput environments (for example, fast-food restaurants at peak hours), local communication provides clear operational advantages over cloud-only message paths:
+
+- **Lower latency for critical actions**  
+  Orders, queue state updates, and calling-screen refreshes stay inside the local network instead of crossing WAN links.
+- **Higher stability under crowded customer networks**  
+  Guest Wi-Fi congestion and mobile carrier variability affect cloud roundtrips much more than local device-to-device traffic on a dedicated store LAN.
+- **Better resilience during internet degradation/outage**  
+  Core in-store flows can continue even if external internet quality drops.
+- **Predictable real-time behavior**  
+  CallingMachine updates (`calling_snapshot` / `calling_alert`) are more deterministic when synchronized directly from CashRegister over LAN/WebSocket.
+- **Lower external dependency and cost pressure**  
+  Day-to-day store operations do not depend on always-on cloud brokers for every state transition.
+
+This does **not** mean cloud is unnecessary. Cloud services are still useful for:
+
+- cross-store reporting and analytics
+- centralized management and backups
+- remote monitoring/operations
+
+Practical model: keep **real-time operational control local-first**, and sync non-real-time business data to cloud asynchronously.
 
 ## Current Platform Targets
 
