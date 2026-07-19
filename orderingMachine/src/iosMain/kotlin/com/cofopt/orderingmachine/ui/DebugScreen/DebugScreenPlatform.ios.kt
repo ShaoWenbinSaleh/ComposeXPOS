@@ -39,8 +39,9 @@ actual object DebugScreenPlatform {
     actual fun SystemInfoTabContent() {
         val context = rememberOrderingPlatformContext()
         val deviceUuid = remember(context) { DeviceConfig.deviceUuid(context) }
-        val host = remember(context) { CashRegisterConfig.host(context).ifBlank { "-" } }
-        val port = remember(context) { CashRegisterConfig.port(context) }
+        val endpoint = remember(context) { CashRegisterConfig.endpoint(context) }
+        val host = endpoint?.host ?: "-"
+        val port = endpoint?.port ?: 8080
 
         Column(
             modifier = Modifier

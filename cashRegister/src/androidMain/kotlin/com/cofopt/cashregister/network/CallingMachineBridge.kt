@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -20,7 +21,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.UUID
 
+@OptIn(FlowPreview::class)
 class CallingMachineBridge(context: Context) {
     private val appContext = context.applicationContext
 
@@ -39,6 +42,14 @@ class CallingMachineBridge(context: Context) {
     private val _status = MutableStateFlow(CallingMachineBridgeStatus())
     val status: StateFlow<CallingMachineBridgeStatus> = _status
     private val connectGeneration = AtomicInteger(0)
+    private val sourceId: String by lazy {
+        val preferences = appContext.getSharedPreferences("calling_transport", Context.MODE_PRIVATE)
+        preferences.getString("source_id", null)
+            ?.takeIf { it.isNotBlank() }
+            ?: "android-${UUID.randomUUID()}".also { created ->
+                preferences.edit().putString("source_id", created).commit()
+            }
+    }
 
     fun start() {
         if (pushJob != null) return
@@ -65,11 +76,14 @@ class CallingMachineBridge(context: Context) {
     fun connect(host: String, port: Int) {
         val normalizedHost = host.trim()
         val generation = connectGeneration.incrementAndGet()
-        if (normalizedHost.isBlank() || port <= 0) {
+        if (normalizedHost.isBlank() || port !in 1..65535) {
+            // Do not leave the previous target connected while reporting that
+            // the requested target is invalid.
+            wsClient.disconnect()
             _status.value = _status.value.copy(
                 connected = false,
                 targetHost = normalizedHost.ifBlank { null },
-                targetPort = if (port > 0) port else null,
+                targetPort = port.takeIf { it in 1..65535 },
                 lastError = "invalid_host_or_port"
             )
             return
@@ -82,9 +96,9 @@ class CallingMachineBridge(context: Context) {
         )
 
         wsClient.connect(
-            normalizedHost,
-            port,
-            object : CallingMachineWsClient.Listener {
+            host = normalizedHost,
+            port = port,
+            listener = object : CallingMachineWsClient.Listener {
                 override fun onConnected() {
                     if (generation != connectGeneration.get()) return
                     _status.value = _status.value.copy(connected = true, lastError = null)
@@ -100,7 +114,8 @@ class CallingMachineBridge(context: Context) {
                     if (generation != connectGeneration.get()) return
                     _status.value = _status.value.copy(connected = false, lastError = message)
                 }
-            }
+            },
+            sourceId = sourceId,
         )
     }
 
@@ -119,13 +134,21 @@ class CallingMachineBridge(context: Context) {
     }
 
     private fun sendSnapshot(preparing: List<Int>, ready: List<Int>, force: Boolean) {
-        val snapshotKey = "${preparing.joinToString(",")}|${ready.joinToString(",")}"
+        val displayLanguage = CashRegisterDebugConfig.callingMachineDisplayLanguage(appContext).name.lowercase()
+        val voiceLanguage = CashRegisterDebugConfig.callingMachineVoiceLanguage(appContext).name.lowercase()
+        val snapshotKey = buildString {
+            append(preparing.joinToString(","))
+            append('|')
+            append(ready.joinToString(","))
+            append('|')
+            append(displayLanguage)
+            append('|')
+            append(voiceLanguage)
+        }
         if (!force && snapshotKey == lastSnapshotKey) return
         if (!wsClient.isConnected()) return
 
         // Full snapshot; receiver is a dumb display.
-        val displayLanguage = CashRegisterDebugConfig.callingMachineDisplayLanguage(appContext).name.lowercase()
-        val voiceLanguage = CashRegisterDebugConfig.callingMachineVoiceLanguage(appContext).name.lowercase()
         val obj = JSONObject()
         obj.put("type", "calling_snapshot")
         obj.put("preparing", JSONArray(preparing))

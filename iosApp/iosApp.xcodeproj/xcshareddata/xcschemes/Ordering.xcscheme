@@ -52,7 +52,7 @@
       </BuildableProductRunnable>
    </LaunchAction>
    <ProfileAction
-      buildConfiguration = "Debug-Ordering"
+      buildConfiguration = "Release-Ordering"
       shouldUseLaunchSchemeArgsEnv = "YES"
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
@@ -72,7 +72,7 @@
       buildConfiguration = "Debug-Ordering">
    </AnalyzeAction>
    <ArchiveAction
-      buildConfiguration = "Debug-Ordering"
+      buildConfiguration = "Release-Ordering"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>

@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+
 package com.cofopt.cashregister.cmp.debug
 
 import androidx.compose.foundation.layout.Arrangement
@@ -52,7 +54,10 @@ import org.w3c.dom.WebSocket
 import org.w3c.dom.events.Event
 import org.w3c.fetch.Headers
 import org.w3c.fetch.RequestInit
+import org.w3c.fetch.Response
 import kotlin.coroutines.resume
+import kotlin.js.JsAny
+import kotlin.js.Promise
 
 private const val CALLING_PORT = 9090
 private const val ORDERING_PORT = 19081
@@ -62,10 +67,40 @@ private const val ORDERING_TARGET_PORT_KEY = "cashregister.ordering.target.port"
 private const val ORDERING_TARGET_SCHEME_KEY = "cashregister.ordering.target.scheme"
 private const val DISCOVERY_PREFIX_KEY = "cashregister.discovery.prefix"
 
-private external class AbortController {
-    val signal: dynamic
+private external class AbortController : JsAny {
+    val signal: JsAny
     fun abort()
 }
+
+private external interface WebRtcIceCandidate : JsAny {
+    val candidate: String
+    val address: String?
+}
+
+private external interface WebRtcIceCandidateEvent : JsAny {
+    val candidate: WebRtcIceCandidate?
+}
+
+private external interface WebRtcPeerConnection : JsAny {
+    var onicecandidate: ((WebRtcIceCandidateEvent) -> JsAny?)?
+    fun createDataChannel(label: String): JsAny
+    fun createOffer(): Promise<JsAny>
+    fun setLocalDescription(description: JsAny): Promise<JsAny>
+    fun close()
+}
+
+private fun requestInit(
+    method: String,
+    headers: Headers?,
+    body: String?,
+    signal: JsAny,
+): RequestInit = js("({ method: method, headers: headers == null ? undefined : headers, body: body == null ? undefined : body, signal: signal })")
+
+private fun noCorsRequestInit(method: String, signal: JsAny): RequestInit =
+    js("({ method: method, mode: 'no-cors', signal: signal })")
+
+private fun createWebRtcPeerConnection(): WebRtcPeerConnection? =
+    js("((window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection) ? new (window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection)({iceServers: []}) : null)")
 
 private data class WebDiscoveredService(
     val role: String,
@@ -1175,18 +1210,21 @@ actual object DebugPlatformActions {
     ): ProbeResponse? {
         val controller = AbortController()
         val timerId = window.setTimeout(
-            handler = { controller.abort() },
+            handler = {
+                controller.abort()
+                null
+            },
             timeout = timeoutMs
         )
         return try {
-            val init = RequestInit(
+            val init = requestInit(
                 method = method,
                 headers = headers,
-                body = body
+                body = body,
+                signal = controller.signal,
             )
-            init.asDynamic().signal = controller.signal
-            val response = window.fetch(url, init).await()
-            val raw = runCatching { response.text().await() }.getOrDefault("")
+            val response: Response = window.fetch(url, init).await()
+            val raw: String = runCatching { response.text().await<String>() }.getOrDefault("")
             ProbeResponse(
                 ok = response.ok,
                 status = response.status.toInt(),
@@ -1205,8 +1243,11 @@ actual object DebugPlatformActions {
         timeoutMs: Int
     ): Boolean = suspendCancellableCoroutine { continuation ->
         val scheme = if (window.location.protocol == "https:") "wss" else "ws"
+        val wsHost = host.trim().let { value ->
+            if (value.contains(':') && !value.startsWith('[')) "[$value]" else value
+        }
         val socket = runCatching {
-            WebSocket("$scheme://$host:$port/?mode=viewer")
+            WebSocket("$scheme://$wsHost:$port/?mode=viewer")
         }.getOrNull()
 
         if (socket == null) {
@@ -1225,7 +1266,10 @@ actual object DebugPlatformActions {
         }
 
         timeoutId = window.setTimeout(
-            handler = { finish(false) },
+            handler = {
+                finish(false)
+                null
+            },
             timeout = timeoutMs
         )
         socket.onopen = { _: Event ->
@@ -1631,16 +1675,20 @@ actual object DebugPlatformActions {
     ): Boolean {
         val controller = AbortController()
         val timerId = window.setTimeout(
-            handler = { controller.abort() },
+            handler = {
+                controller.abort()
+                null
+            },
             timeout = timeoutMs
         )
         return try {
-            val init = RequestInit(method = "GET")
-            init.asDynamic().mode = "no-cors"
-            init.asDynamic().signal = controller.signal
+            val init = noCorsRequestInit(
+                method = "GET",
+                signal = controller.signal,
+            )
             val normalizedPath = if (path.startsWith("/")) path else "/$path"
             val url = buildOrderingUrl(scheme = scheme, host = host, port = port, path = normalizedPath)
-            window.fetch(url, init).await()
+            window.fetch(url, init).await<Response>()
             true
         } catch (_: Throwable) {
             false
@@ -1650,17 +1698,12 @@ actual object DebugPlatformActions {
     }
 
     private suspend fun discoverLocalLanPrefixesViaWebRtc(timeoutMs: Int): Set<String> {
-        val ctor = js("window.RTCPeerConnection || window.webkitRTCPeerConnection || window.mozRTCPeerConnection")
-        if (jsTypeOf(ctor) == "undefined") return emptySet()
-
         val prefixes = LinkedHashSet<String>()
-        val rtc = runCatching {
-            js("new ctor({iceServers: []})")
-        }.getOrNull() ?: return emptySet()
+        val rtc = runCatching { createWebRtcPeerConnection() }.getOrNull() ?: return emptySet()
 
         fun collectPrefix(raw: String?) {
-            if (raw.isNullOrBlank()) return
-            val matches = Regex("(\\d{1,3}(?:\\.\\d{1,3}){3})").findAll(raw)
+            val text = raw?.takeIf { it.isNotBlank() } ?: return
+            val matches = Regex("(\\d{1,3}(?:\\.\\d{1,3}){3})").findAll(text)
             matches.forEach { match ->
                 val prefix = ipv4PrefixOfPrivateAddress(match.value)
                 if (prefix != null) prefixes += prefix
@@ -1668,19 +1711,20 @@ actual object DebugPlatformActions {
         }
 
         runCatching {
-            rtc.onicecandidate = { event: dynamic ->
-                val candidate = event?.candidate
+            rtc.onicecandidate = { event: WebRtcIceCandidateEvent ->
+                val candidate = event.candidate
                 if (candidate != null) {
-                    collectPrefix(candidate.candidate?.toString())
-                    collectPrefix(candidate.address?.toString())
+                    collectPrefix(candidate.candidate)
+                    collectPrefix(candidate.address)
                 }
+                null
             }
             rtc.createDataChannel("composexpos-lan-probe")
         }
 
         runCatching {
-            val offer = rtc.createOffer().await()
-            rtc.setLocalDescription(offer).await()
+            val offer: JsAny = rtc.createOffer().await()
+            rtc.setLocalDescription(offer).await<JsAny>()
             delay(timeoutMs.toLong())
         }
 

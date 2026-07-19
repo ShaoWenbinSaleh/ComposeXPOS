@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -11,6 +12,9 @@ interface DishDao {
     // Preserve CSV-defined order (insert order) to avoid lexicographic id sorting (e.g., 1,10,11,2)
     @Query("SELECT * FROM dishes ORDER BY rowid")
     fun observeAll(): Flow<List<DishEntity>>
+
+    @Query("SELECT * FROM dishes ORDER BY rowid")
+    suspend fun getAll(): List<DishEntity>
 
     @Query("SELECT id FROM dishes")
     suspend fun getAllIds(): List<String>
@@ -20,6 +24,12 @@ interface DishDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<DishEntity>)
+
+    @Transaction
+    suspend fun replaceAll(items: List<DishEntity>) {
+        clearAll()
+        insertAll(items)
+    }
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAllIgnore(items: List<DishEntity>)

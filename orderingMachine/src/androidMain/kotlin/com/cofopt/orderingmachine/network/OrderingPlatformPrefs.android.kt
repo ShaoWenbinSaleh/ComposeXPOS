@@ -42,6 +42,29 @@ actual object OrderingPlatformPrefs {
         prefs(context, prefsName).edit().putString(key, value).apply()
     }
 
+    actual fun putStringDurable(
+        context: OrderingPlatformContext,
+        prefsName: String,
+        key: String,
+        value: String,
+    ): Boolean = prefs(context, prefsName).edit().putString(key, value).commit()
+
+    actual fun getStringsWithPrefix(
+        context: OrderingPlatformContext,
+        prefsName: String,
+        keyPrefix: String,
+    ): Map<String, String>? = runCatching {
+        val matching = prefs(context, prefsName).all.filterKeys { it.startsWith(keyPrefix) }
+        if (matching.values.any { it !is String }) error("non_string_preference_in_string_namespace")
+        matching.mapValues { (_, value) -> value as String }
+    }.getOrNull()
+
+    actual fun removeStringDurable(
+        context: OrderingPlatformContext,
+        prefsName: String,
+        key: String,
+    ): Boolean = prefs(context, prefsName).edit().remove(key).commit()
+
     actual fun putInt(
         context: OrderingPlatformContext,
         prefsName: String,

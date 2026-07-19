@@ -34,7 +34,10 @@ object WecrConfig {
     }
 
     fun enableCardPayment(context: OrderingPlatformContext): Boolean {
-        return OrderingPlatformPrefs.getBoolean(context, PREFS_NAME, KEY_ENABLE_CARD_PAYMENT, true)
+        // This repository ships only an explicit mock WECR implementation.
+        // Card payment is opt-in so a fresh production install cannot mark a
+        // real customer order paid without an actual acquirer integration.
+        return OrderingPlatformPrefs.getBoolean(context, PREFS_NAME, KEY_ENABLE_CARD_PAYMENT, false)
     }
 
     fun autoCardSuccess(context: OrderingPlatformContext): Boolean {

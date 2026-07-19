@@ -5,7 +5,8 @@ import kotlinx.coroutines.flow.StateFlow
 enum class ManualCallAddResult {
     Added,
     Duplicate,
-    OutOfRange
+    OutOfRange,
+    PersistenceFailed,
 }
 
 expect object CallingPlatform {

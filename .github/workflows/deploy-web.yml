@@ -31,6 +31,23 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Run communication and model unit tests
+        run: |
+          ./gradlew \
+            :shared:testDebugUnitTest \
+            :orderingMachine:testDebugUnitTest \
+            :cashRegister:testDebugUnitTest \
+            :callingMachine:testDebugUnitTest \
+            --no-daemon
+
+      - name: Verify Wasm targets compile
+        run: |
+          ./gradlew \
+            :orderingMachine:compileKotlinWasmJs \
+            :cashRegister:compileKotlinWasmJs \
+            :callingMachine:compileKotlinWasmJs \
+            --no-daemon
+
       - name: Build web distributions
         run: |
           ./gradlew \

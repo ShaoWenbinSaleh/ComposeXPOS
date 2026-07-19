@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,11 +21,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.cofopt.cashregister.cmp.platform.CallingPlatform
 import com.cofopt.cashregister.network.OrderPayload
 import com.cofopt.cashregister.utils.tr
 import com.cofopt.shared.network.OrderingCashRegisterConfigRequest
 import com.cofopt.shared.network.OrderingCashRegisterConfigResponse
 import com.cofopt.shared.network.COMPOSEXPOS_LINK_SHARED_KEY
+import com.cofopt.shared.network.IosCallingEndpointStore
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -50,7 +54,109 @@ actual object DebugPlatformActions {
 
     @Composable
     actual fun CallingMachineTabContent() {
-        Text("Calling debug is unavailable on iOS build")
+        val bridgeStatus by CallingPlatform.bridgeStatus.collectAsState()
+        var host by remember { mutableStateOf(IosCallingEndpointStore.loadHost().orEmpty()) }
+        var port by remember { mutableStateOf(IosCallingEndpointStore.loadPort().toString()) }
+        var displayLanguage by remember { mutableStateOf(bridgeStatus.displayLanguage) }
+        var voiceLanguage by remember { mutableStateOf(bridgeStatus.voiceLanguage) }
+        var message by remember { mutableStateOf<String?>(null) }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F6F8))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = tr("Calling Machine", "叫号机", "Oproepmachine"),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text("Connected: ${bridgeStatus.connected}")
+                Text("Target: ${(bridgeStatus.targetHost ?: "-")}:${bridgeStatus.targetPort ?: "-"}")
+                if (bridgeStatus.reconnectAttempts > 0) {
+                    Text("Reconnect attempts: ${bridgeStatus.reconnectAttempts}")
+                }
+                bridgeStatus.lastError?.takeIf { it.isNotBlank() }?.let {
+                    Text("Last error: $it", color = Color(0xFFC62828))
+                }
+
+                OutlinedTextField(
+                    value = host,
+                    onValueChange = { host = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("CallingMachine Host") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = port,
+                    onValueChange = { port = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("CallingMachine Port") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = displayLanguage,
+                    onValueChange = { displayLanguage = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Display language (en/zh/nl/ja/tr)") },
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = voiceLanguage,
+                    onValueChange = { voiceLanguage = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Voice language (en/zh/nl/ja/tr)") },
+                    singleLine = true
+                )
+                Button(
+                    onClick = {
+                        message = if (
+                            CallingPlatform.updateCallingLanguages(displayLanguage, voiceLanguage)
+                        ) {
+                            "Calling languages updated"
+                        } else {
+                            "ERROR: Invalid language or persistence failure"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(tr("Apply languages", "应用语言", "Talen toepassen"))
+                }
+                Button(
+                    onClick = {
+                        val parsedPort = port.toIntOrNull()
+                        if (parsedPort == null || !CallingPlatform.connectToCallingMachine(host, parsedPort)) {
+                            message = "ERROR: Invalid host or port"
+                        } else {
+                            message = "Connecting to ${host.trim()}:$parsedPort"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(tr("Connect", "连接", "Verbinden"))
+                }
+                if (bridgeStatus.connected) {
+                    Button(
+                        onClick = {
+                            CallingPlatform.disconnectCallingMachine()
+                            message = "Disconnected"
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(tr("Disconnect", "断开连接", "Verbreken"))
+                    }
+                }
+                message?.let {
+                    Text(
+                        it,
+                        color = if (it.startsWith("ERROR")) Color(0xFFC62828) else Color(0xFF1E7D34)
+                    )
+                }
+            }
+        }
     }
 
     @Composable
@@ -147,6 +253,7 @@ actual object DebugPlatformActions {
         }
     }
 
+    @OptIn(BetaInteropApi::class)
     private suspend fun pushOrderingConfig(
         orderingHost: String,
         orderingPort: Int,
@@ -235,7 +342,7 @@ actual object DebugPlatformActions {
     }
 }
 
-@OptIn(ExperimentalForeignApi::class)
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 private fun ByteArray.toNSData(): NSData = usePinned {
     NSData.create(bytes = it.addressOf(0), length = size.toULong())
 }

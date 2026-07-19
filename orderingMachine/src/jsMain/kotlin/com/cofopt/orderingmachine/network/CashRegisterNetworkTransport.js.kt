@@ -1,6 +1,7 @@
 package com.cofopt.orderingmachine.network
 
 import kotlinx.browser.window
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.await
 import org.w3c.fetch.Headers
 import org.w3c.fetch.RequestInit
@@ -12,8 +13,8 @@ private external class AbortController {
 
 actual object CashRegisterNetworkTransport {
     actual suspend fun testConnection(host: String, port: Int, timeoutMillis: Int): Boolean {
-        val healthUrl = "http://$host:$port/health"
-        return runCatching {
+        val healthUrl = cashRegisterUrl(host, port, "/health") ?: return false
+        return try {
             val response = request(
                 method = "GET",
                 url = healthUrl,
@@ -21,8 +22,12 @@ actual object CashRegisterNetworkTransport {
                 connectTimeoutMillis = timeoutMillis,
                 readTimeoutMillis = timeoutMillis,
             )
-            response.statusCode in 100..599
-        }.getOrDefault(false)
+            isCashRegisterHealthResponse(response)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     actual suspend fun request(
@@ -38,11 +43,15 @@ actual object CashRegisterNetworkTransport {
         }
 
         val controller = AbortController()
+        val totalTimeoutMillis = (
+            connectTimeoutMillis.toLong().coerceAtLeast(0) +
+                readTimeoutMillis.toLong().coerceAtLeast(0)
+            ).coerceIn(1, Int.MAX_VALUE.toLong()).toInt()
         val timeoutId = window.setTimeout(
             handler = {
                 runCatching { controller.abort() }
             },
-            timeout = (connectTimeoutMillis + readTimeoutMillis),
+            timeout = totalTimeoutMillis,
         )
 
         try {
@@ -54,7 +63,13 @@ actual object CashRegisterNetworkTransport {
             init.asDynamic().signal = controller.signal
 
             val response = window.fetch(url, init).await()
-            val body = runCatching { response.text().await() }.getOrDefault("")
+            val body = try {
+                response.text().await()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                ""
+            }
             return CashRegisterHttpResponse(
                 statusCode = response.status.toInt(),
                 body = body,

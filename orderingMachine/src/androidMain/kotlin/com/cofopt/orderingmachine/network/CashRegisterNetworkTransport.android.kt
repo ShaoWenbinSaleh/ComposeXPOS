@@ -1,21 +1,27 @@
 package com.cofopt.orderingmachine.network
 
 import java.net.HttpURLConnection
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.net.URL
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 actual object CashRegisterNetworkTransport {
     actual suspend fun testConnection(host: String, port: Int, timeoutMillis: Int): Boolean {
-        return withContext(Dispatchers.IO) {
-            runCatching {
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress(host, port), timeoutMillis)
-                    true
-                }
-            }.getOrDefault(false)
+        val healthUrl = cashRegisterUrl(host, port, "/health") ?: return false
+        return try {
+            val response = request(
+                method = "GET",
+                url = healthUrl,
+                requestBody = null,
+                connectTimeoutMillis = timeoutMillis,
+                readTimeoutMillis = timeoutMillis,
+            )
+            isCashRegisterHealthResponse(response)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -30,8 +36,9 @@ actual object CashRegisterNetworkTransport {
             val conn = (URL(url).openConnection() as HttpURLConnection)
             try {
                 conn.requestMethod = method
-                conn.connectTimeout = connectTimeoutMillis
-                conn.readTimeout = readTimeoutMillis
+                conn.connectTimeout = connectTimeoutMillis.coerceAtLeast(1)
+                conn.readTimeout = readTimeoutMillis.coerceAtLeast(1)
+                conn.setRequestProperty("Accept", "application/json, text/plain")
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
 
                 if (requestBody != null) {

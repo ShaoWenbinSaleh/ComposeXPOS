@@ -55,6 +55,7 @@ sealed class PaymentError {
     object PosTriggerFailed : PaymentError()
     object PaymentTimeout : PaymentError()
     object PaymentCancelled : PaymentError()
+    object ResolutionRequired : PaymentError()
     data class UnknownError(val message: String) : PaymentError()
 }
 
@@ -66,6 +67,9 @@ sealed class PaymentEvent {
     data class PosTriggerResult(val success: Boolean) : PaymentEvent()
     data class PaymentCompleted(val callNumber: Int?) : PaymentEvent()
     data class PaymentFailed(val error: PaymentError) : PaymentEvent()
+    data class PaymentResolutionRequired(val error: PaymentError = PaymentError.ResolutionRequired) : PaymentEvent()
+    data class PaymentRecoveryCompleted(val callNumber: Int?) : PaymentEvent()
+    object PaymentRecoveryFailed : PaymentEvent()
     object PaymentTimeout : PaymentEvent()
     object PaymentCancelled : PaymentEvent()
     object RetryPayment : PaymentEvent()
@@ -107,6 +111,36 @@ class PaymentStateMachine(initialLanguage: Language) {
     }
 
     fun handleEvent(event: PaymentEvent) {
+        // A durable recovery may finish after the foreground request already
+        // moved into its locked resolution screen. These events must not be
+        // ignored merely because ordinary retry actions are disabled there.
+        if (currentState !is PaymentState.PaymentSuccess) {
+            when (event) {
+                is PaymentEvent.PaymentRecoveryCompleted -> {
+                    setState(
+                        PaymentState.PaymentSuccess(
+                            language = language,
+                            paymentMethod = PaymentMethod.CARD,
+                            callNumber = event.callNumber,
+                        )
+                    )
+                    return
+                }
+
+                is PaymentEvent.PaymentRecoveryFailed -> {
+                    setState(
+                        PaymentState.SelectingPayment(
+                            language = language,
+                            paymentError = PaymentError.PaymentCancelled,
+                        )
+                    )
+                    return
+                }
+
+                else -> Unit
+            }
+        }
+
         val newState = when (val state = currentState) {
             is PaymentState.Idle -> {
                 when (event) {
@@ -143,6 +177,23 @@ class PaymentStateMachine(initialLanguage: Language) {
                         paymentError = event.error
                     )
 
+                    is PaymentEvent.PaymentCompleted -> PaymentState.PaymentSuccess(
+                        language = state.language,
+                        paymentMethod = PaymentMethod.CARD,
+                        callNumber = event.callNumber,
+                    )
+
+                    is PaymentEvent.PaymentResolutionRequired -> PaymentState.PaymentFailed(
+                        language = state.language,
+                        error = event.error,
+                        canRetry = false,
+                    )
+
+                    is PaymentEvent.PaymentCancelled -> PaymentState.SelectingPayment(
+                        language = state.language,
+                        paymentError = PaymentError.PaymentCancelled,
+                    )
+
                     else -> state
                 }
             }
@@ -159,6 +210,12 @@ class PaymentStateMachine(initialLanguage: Language) {
                     is PaymentEvent.PaymentFailed -> PaymentState.PaymentFailed(
                         language = state.language,
                         error = event.error
+                    )
+
+                    is PaymentEvent.PaymentResolutionRequired -> PaymentState.PaymentFailed(
+                        language = state.language,
+                        error = event.error,
+                        canRetry = false,
                     )
 
                     is PaymentEvent.PaymentTimeout -> PaymentState.PaymentTimeout(language = state.language)
@@ -197,6 +254,7 @@ class PaymentStateMachine(initialLanguage: Language) {
             is PaymentState.PaymentSuccess -> state
 
             is PaymentState.PaymentFailed -> {
+                if (!state.canRetry) return
                 when (event) {
                     is PaymentEvent.SelectPaymentMethod -> {
                         when (event.method) {
@@ -270,6 +328,15 @@ class PaymentStateMachine(initialLanguage: Language) {
                 "Betaling geannuleerd. Probeer het opnieuw.",
                 ja = "支払いがキャンセルされました。もう一度お試しください。",
                 tr = "Ödeme iptal edildi. Lütfen tekrar deneyin."
+            )
+
+            is PaymentError.ResolutionRequired -> tr(
+                language,
+                "Payment result is still being verified. Do not retry or use another payment method; please contact staff.",
+                "支付结果仍在核验中。请勿重试或更换支付方式，并联系工作人员。",
+                "De betaalstatus wordt nog gecontroleerd. Probeer niet opnieuw en kies geen andere betaalmethode; neem contact op met personeel.",
+                ja = "支払い結果を確認中です。再試行や別の支払い方法を使用せず、スタッフにお声がけください。",
+                tr = "Ödeme sonucu hâlâ doğrulanıyor. Yeniden denemeyin veya başka bir ödeme yöntemi kullanmayın; personele başvurun."
             )
 
             is PaymentError.UnknownError -> tr(

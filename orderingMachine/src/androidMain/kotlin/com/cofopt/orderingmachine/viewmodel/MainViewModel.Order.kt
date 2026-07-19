@@ -2,14 +2,13 @@ package com.cofopt.orderingmachine.viewmodel
 
 import android.content.Context
 import androidx.lifecycle.viewModelScope
-import com.cofopt.orderingmachine.OrderMode
 import com.cofopt.orderingmachine.network.CashRegisterClient
-import com.cofopt.orderingmachine.network.CashRegisterOrderItemPayload
 import com.cofopt.orderingmachine.network.CashRegisterOrderPayload
-import com.cofopt.orderingmachine.network.DeviceConfig
+import com.cofopt.orderingmachine.network.CashRegisterOrderSubmissionResult
 import com.cofopt.orderingmachine.network.PrinterConfig
 import com.cofopt.orderingmachine.network.WecrHttpsClient
 import com.cofopt.orderingmachine.ui.PaymentScreen.OrderPrint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -17,54 +16,80 @@ internal suspend fun MainViewModel.postOrderToCashRegisterIfConfiguredImpl(
     context: Context,
     paymentMethod: String,
     paymentStatus: String,
-): Int? {
+): CashRegisterOrderSubmissionResult {
     if (!CashRegisterClient.isConfigured(context)) {
         android.util.Log.w("MainViewModel", "CashRegister is not configured")
-        return null
+        return CashRegisterOrderSubmissionResult.Rejected(0, "cashregister_not_configured")
     }
+
+    val payload = activeOrderPayloadForImpl(context, paymentMethod, paymentStatus)
 
     return try {
-        val now = System.currentTimeMillis()
-        val orderId = "OM_${now}_${(1000..9999).random()}"
-        val dineIn = orderMode == OrderMode.DINE_IN
-
-        val items = cartItems.map { ci ->
-            CashRegisterOrderItemPayload(
-                menuItemId = ci.menuItem.id,
-                nameEn = ci.menuItem.nameEn,
-                nameZh = ci.menuItem.nameZh,
-                nameNl = ci.menuItem.nameNl,
-                quantity = ci.quantity,
-                unitPrice = ci.menuItem.price,
-                customizations = ci.customizations,
-                customizationLines = customizationLinesForPrintImpl(ci.customizations)
-            )
-        }
-
-        val payload = CashRegisterOrderPayload(
-            orderId = orderId,
-            createdAtMillis = now,
-            source = "KIOSK",
-            deviceName = DeviceConfig.deviceName(context),
-            dineIn = dineIn,
-            paymentMethod = paymentMethod,
-            paymentStatus = paymentStatus,
-            total = totalAmount,
-            items = items
-        )
-
         android.util.Log.d(
             "MainViewModel",
-            "Sending order to CashRegister: orderId=$orderId, paymentMethod=$paymentMethod, total=$totalAmount, items=${items.size}"
+            "Sending order to CashRegister: orderId=${payload.orderId}, paymentMethod=$paymentMethod, total=${payload.total}, items=${payload.items.size}"
         )
 
-        val result = CashRegisterClient.postOrder(context, payload)
+        val result = CashRegisterClient.submitOrder(context, payload)
         android.util.Log.d("MainViewModel", "CashRegister response: $result")
         result
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (e: Exception) {
         android.util.Log.e("MainViewModel", "Error posting order to CashRegister: ${e.message}", e)
-        null
+        val durable = try {
+            CashRegisterClient.isOrderDurablyRecorded(context, payload)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+        if (durable) {
+            CashRegisterOrderSubmissionResult.Pending(
+                orderId = payload.orderId,
+                message = e.message,
+            )
+        } else {
+            CashRegisterOrderSubmissionResult.Indeterminate(
+                orderId = payload.orderId,
+                message = e.message ?: "order_submission_durability_unknown",
+            )
+        }
     }
+}
+
+internal fun MainViewModel.activeOrderPayloadForImpl(
+    context: Context,
+    paymentMethod: String,
+    paymentStatus: String,
+): CashRegisterOrderPayload = synchronized(activeOrderLock) {
+    val normalizedMethod = paymentMethod.trim().uppercase()
+    val normalizedStatus = paymentStatus.trim().uppercase()
+    activeOrderPayload?.let { existing ->
+        if (
+            existing.paymentMethod.trim().uppercase() != normalizedMethod ||
+            existing.paymentStatus.trim().uppercase() != normalizedStatus
+        ) {
+            throw IllegalStateException("pending_order_uses_${existing.paymentMethod.lowercase()}_payment")
+        }
+        return@synchronized existing
+    }
+
+    buildCashRegisterOrderPayloadImpl(
+        context = context,
+        cartItems = cartItems,
+        total = totalAmount,
+        dineIn = orderMode == com.cofopt.orderingmachine.OrderMode.DINE_IN,
+        paymentMethod = normalizedMethod,
+        paymentStatus = normalizedStatus,
+    ).also { activeOrderPayload = it }
+}
+
+internal fun MainViewModel.currentActiveOrderPayloadImpl(): CashRegisterOrderPayload? =
+    synchronized(activeOrderLock) { activeOrderPayload }
+
+internal fun MainViewModel.clearActiveOrderPayloadImpl() {
+    synchronized(activeOrderLock) { activeOrderPayload = null }
 }
 
 internal fun MainViewModel.showPrintErrorImpl() {
@@ -75,37 +100,13 @@ internal fun MainViewModel.showPrintErrorImpl() {
     }
 }
 
-internal fun MainViewModel.printUnpaidOrderImpl(context: Context, callNumber: String) {
+internal fun MainViewModel.printUnpaidOrderImpl(
+    context: Context,
+    callNumber: String,
+    orderPayload: CashRegisterOrderPayload,
+) {
     try {
         val orderPrint = OrderPrint()
-        val now = System.currentTimeMillis()
-        val orderId = "OM_${now}_${(1000..9999).random()}"
-        val dineIn = orderMode == OrderMode.DINE_IN
-
-        val items = cartItems.map { ci ->
-            CashRegisterOrderItemPayload(
-                menuItemId = ci.menuItem.id,
-                nameEn = ci.menuItem.nameEn,
-                nameZh = ci.menuItem.nameZh,
-                nameNl = ci.menuItem.nameNl,
-                quantity = ci.quantity,
-                unitPrice = ci.menuItem.price,
-                customizations = ci.customizations,
-                customizationLines = customizationLinesForPrintImpl(ci.customizations)
-            )
-        }
-
-        val orderPayload = CashRegisterOrderPayload(
-            orderId = orderId,
-            createdAtMillis = now,
-            source = "KIOSK",
-            deviceName = DeviceConfig.deviceName(context),
-            dineIn = dineIn,
-            paymentMethod = "CASH",
-            paymentStatus = "UNPAID",
-            total = totalAmount,
-            items = items
-        )
 
         val printerMode = PrinterConfig.mode(context)
         val printType = if (printerMode == "SUNMI") {
@@ -148,39 +149,12 @@ internal fun MainViewModel.printUnpaidOrderImpl(context: Context, callNumber: St
 internal fun MainViewModel.printPaidOrderImpl(
     context: Context,
     callNumber: String,
+    orderPayload: CashRegisterOrderPayload,
     transactionRef: String? = null,
     wecrStatus: WecrHttpsClient.TransactionStatus? = null
 ) {
     try {
         val orderPrint = OrderPrint()
-        val now = System.currentTimeMillis()
-        val orderId = "OM_${now}_${(1000..9999).random()}"
-        val dineIn = orderMode == OrderMode.DINE_IN
-
-        val items = cartItems.map { ci ->
-            CashRegisterOrderItemPayload(
-                menuItemId = ci.menuItem.id,
-                nameEn = ci.menuItem.nameEn,
-                nameZh = ci.menuItem.nameZh,
-                nameNl = ci.menuItem.nameNl,
-                quantity = ci.quantity,
-                unitPrice = ci.menuItem.price,
-                customizations = ci.customizations,
-                customizationLines = customizationLinesForPrintImpl(ci.customizations)
-            )
-        }
-
-        val orderPayload = CashRegisterOrderPayload(
-            orderId = orderId,
-            createdAtMillis = now,
-            source = "KIOSK",
-            deviceName = DeviceConfig.deviceName(context),
-            dineIn = dineIn,
-            paymentMethod = "CARD",
-            paymentStatus = "PAID",
-            total = totalAmount,
-            items = items
-        )
 
         val printerMode = PrinterConfig.mode(context)
         val printType = if (printerMode == "SUNMI") {

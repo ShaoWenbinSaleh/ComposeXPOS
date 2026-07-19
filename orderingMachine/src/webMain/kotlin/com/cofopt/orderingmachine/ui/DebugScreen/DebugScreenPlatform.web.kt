@@ -129,8 +129,9 @@ actual object DebugScreenPlatform {
             val host = window.location.hostname.orEmpty().trim()
             if (isLikelyLocalLanHost(host)) host else "-"
         }
-        val host = remember(context) { CashRegisterConfig.host(context).ifBlank { "-" } }
-        val port = remember(context) { CashRegisterConfig.port(context) }
+        val endpoint = remember(context) { CashRegisterConfig.endpoint(context) }
+        val host = endpoint?.host ?: "-"
+        val port = endpoint?.port ?: 8080
 
         Column(
             modifier = Modifier

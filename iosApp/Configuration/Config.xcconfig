@@ -5,3 +5,8 @@ PRODUCT_BUNDLE_IDENTIFIER=com.cofopt.composexpos.ComposeXPOS$(TEAM_ID)
 
 CURRENT_PROJECT_VERSION=1
 MARKETING_VERSION=1.0
+
+// LAN endpoint of the Android CallingMachine WebSocket server. This can also
+// be overridden at runtime through NSUserDefaults/launch arguments.
+COMPOSEXPOS_CALLING_HOST=
+COMPOSEXPOS_CALLING_PORT=9090

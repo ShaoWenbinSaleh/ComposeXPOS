@@ -52,6 +52,12 @@ kotlin {
             implementation(libs.compose.ui)
             implementation(libs.compose.uiToolingPreview)
         }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+        androidUnitTest.dependencies {
+            implementation(kotlin("test"))
+        }
         androidMain.dependencies {
             implementation("androidx.compose.runtime:runtime")
             implementation("androidx.compose.foundation:foundation")
@@ -127,6 +133,10 @@ android {
     buildFeatures {
         aidl = true
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -135,6 +145,7 @@ dependencies {
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2025.11.01"))
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation("androidx.compose.ui:ui-test")
     debugImplementation("androidx.compose.ui:ui-tooling")

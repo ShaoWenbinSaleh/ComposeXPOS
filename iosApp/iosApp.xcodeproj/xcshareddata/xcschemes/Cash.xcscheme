@@ -52,7 +52,7 @@
       </BuildableProductRunnable>
    </LaunchAction>
    <ProfileAction
-      buildConfiguration = "Debug-Cash"
+      buildConfiguration = "Release-Cash"
       shouldUseLaunchSchemeArgsEnv = "YES"
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
@@ -72,7 +72,7 @@
       buildConfiguration = "Debug-Cash">
    </AnalyzeAction>
    <ArchiveAction
-      buildConfiguration = "Debug-Cash"
+      buildConfiguration = "Release-Cash"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>

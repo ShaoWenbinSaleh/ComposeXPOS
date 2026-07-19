@@ -21,13 +21,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.cofopt.orderingmachine.currentTimeMillis
+import com.cofopt.orderingmachine.currentEpochMillis
 import com.cofopt.orderingmachine.network.CashRegisterClient
 import com.cofopt.orderingmachine.network.CashRegisterConfig
 import com.cofopt.orderingmachine.network.CashRegisterOrderItemPayload
 import com.cofopt.orderingmachine.network.CashRegisterOrderPayload
 import com.cofopt.orderingmachine.network.DeviceConfig
 import com.cofopt.orderingmachine.network.rememberOrderingPlatformContext
+import com.cofopt.orderingmachine.network.normalizeCashRegisterHost
 import com.cofopt.orderingmachine.ui.common.components.DebugSectionCard
 import kotlinx.coroutines.launch
 
@@ -35,8 +36,15 @@ import kotlinx.coroutines.launch
 fun SystemSettingTab() {
     val context = rememberOrderingPlatformContext()
     val scope = rememberCoroutineScope()
+    val configuredEndpoint = remember(context) { CashRegisterConfig.endpoint(context) }
 
     var testStatus by remember { mutableStateOf<String?>(null) }
+    var cashRegisterHost by remember(context) {
+        mutableStateOf(configuredEndpoint?.host.orEmpty())
+    }
+    var cashRegisterPort by remember(context) {
+        mutableStateOf((configuredEndpoint?.port ?: 8080).toString())
+    }
     val deviceUuid = remember(context) { DeviceConfig.deviceUuid(context) }
     val androidDeviceName = remember { DeviceConfig.androidDeviceName() }
 
@@ -74,26 +82,46 @@ fun SystemSettingTab() {
                 fontWeight = FontWeight.Bold,
             )
 
-            val currentHost = CashRegisterConfig.host(context).ifBlank { "-" }
-            val currentPort = CashRegisterConfig.port(context)
-
             OutlinedTextField(
-                value = currentHost,
-                onValueChange = {},
+                value = cashRegisterHost,
+                onValueChange = { cashRegisterHost = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("CURRENT HOST (AUTO)") },
+                label = { Text("CASHREGISTER HOST") },
                 singleLine = true,
-                readOnly = true,
             )
 
-            Text(
-                text = "Current Port: $currentPort",
-                style = MaterialTheme.typography.bodyMedium,
+            OutlinedTextField(
+                value = cashRegisterPort,
+                onValueChange = { cashRegisterPort = it.filter(Char::isDigit).take(5) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("CASHREGISTER PORT") },
+                singleLine = true,
             )
 
             Button(
                 onClick = {
-                    if (currentHost == "-") {
+                    val port = cashRegisterPort.toIntOrNull()
+                    val host = port?.let { normalizeCashRegisterHost(cashRegisterHost, it) }
+                    if (port == null || port !in 1..65535 || host == null) {
+                        testStatus = "Invalid CashRegister host or port"
+                    } else {
+                        if (CashRegisterConfig.save(context, host, port)) {
+                            cashRegisterHost = host
+                            cashRegisterPort = port.toString()
+                            testStatus = "CashRegister endpoint saved"
+                        } else {
+                            testStatus = "CashRegister endpoint could not be saved"
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Save CashRegister Endpoint")
+            }
+
+            Button(
+                onClick = {
+                    if (!CashRegisterClient.isConfigured(context)) {
                         testStatus = "CashRegister host is not configured yet"
                         return@Button
                     }
@@ -101,12 +129,13 @@ fun SystemSettingTab() {
                     scope.launch {
                         try {
                             val payload = CashRegisterOrderPayload(
-                                orderId = "TEST_${currentTimeMillis()}",
-                                createdAtMillis = currentTimeMillis(),
-                                source = "OrderingMachine",
+                                orderId = "TEST_${currentEpochMillis()}",
+                                createdAtMillis = currentEpochMillis(),
+                                source = "KIOSK",
                                 deviceName = DeviceConfig.deviceUuid(context),
                                 dineIn = true,
-                                paymentMethod = "TEST",
+                                paymentMethod = "CARD",
+                                paymentStatus = "PAID",
                                 total = 1.0,
                                 items = listOf(
                                     CashRegisterOrderItemPayload(

@@ -1,5 +1,6 @@
 package com.cofopt.orderingmachine.ui.PaymentScreen
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -18,12 +19,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.cofopt.orderingmachine.OrderMode
 import com.cofopt.orderingmachine.PaymentMethod
-import com.cofopt.orderingmachine.network.CashRegisterClient
 import com.cofopt.orderingmachine.network.WecrConfig
 import com.cofopt.orderingmachine.viewmodel.MainViewModel
 import com.cofopt.shared.mock.MockFeatureNotice
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 
 @Composable
@@ -40,6 +43,8 @@ fun PaymentFlowScreen(
     val total = viewModel.totalAmount
     val coroutineScope = rememberCoroutineScope()
 
+    // Android Lint does not resolve this commonMain constructor and models it as Unit.
+    @SuppressLint("RememberReturnType")
     val stateMachine = remember { PaymentStateMachine(language) }
     var currentState by remember { mutableStateOf(stateMachine.getCurrentState()) }
 
@@ -47,7 +52,22 @@ fun PaymentFlowScreen(
         stateMachine.updateLanguage(language)
     }
 
-    DisposableEffect(stateMachine) {
+    LaunchedEffect(viewModel.cardPaymentRecoveryOutcome) {
+        val outcome = viewModel.cardPaymentRecoveryOutcome ?: return@LaunchedEffect
+        when (outcome) {
+            is CardPaymentRecoveryOutcome.Paid -> stateMachine.handleEvent(
+                PaymentEvent.PaymentRecoveryCompleted(outcome.callNumber)
+            )
+
+            CardPaymentRecoveryOutcome.NotPaid -> stateMachine.handleEvent(
+                PaymentEvent.PaymentRecoveryFailed
+            )
+        }
+        viewModel.consumeCardPaymentRecoveryOutcome()
+    }
+
+    // stateMachine is remembered for the whole lifetime of this composition.
+    DisposableEffect(Unit) {
         stateMachine.setStateChangeListener { newState ->
             currentState = newState
         }
@@ -61,9 +81,10 @@ fun PaymentFlowScreen(
     val s = currentState
 
     fun launchManagedPaymentJob(block: suspend () -> Unit) {
-        viewModel.paymentJob?.cancel()
-        val job = coroutineScope.launch(Dispatchers.IO) {
+        val previous = viewModel.paymentJob
+        val job = coroutineScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             try {
+                previous?.cancelAndJoin()
                 block()
             } finally {
                 if (viewModel.paymentJob === coroutineContext[Job]) {
@@ -72,6 +93,7 @@ fun PaymentFlowScreen(
             }
         }
         viewModel.paymentJob = job
+        job.start()
     }
 
     LaunchedEffect(s) {
@@ -85,14 +107,13 @@ fun PaymentFlowScreen(
                     try {
                         android.util.Log.d("PaymentFlow", "Starting COUNTER payment")
                         viewModel.setPaymentMethodForFlow(PaymentMethod.COUNTER)
-                        val connected = CashRegisterClient.testConnectionWithRetry(context)
-                        val callNumber = if (connected) {
-                            viewModel.processCounterPayment(context)
-                        } else {
-                            viewModel.processCounterPaymentOffline(context)
-                        }
+                        // Submission itself is durably queued before network I/O;
+                        // a separate health probe can be stale and must not bypass it.
+                        val callNumber = viewModel.processCounterPayment(context)
                         android.util.Log.d("PaymentFlow", "COUNTER payment completed: callNumber=$callNumber")
                         stateMachine.handleEvent(PaymentEvent.PaymentCompleted(callNumber))
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
                     } catch (e: Exception) {
                         android.util.Log.e("PaymentFlow", "COUNTER payment failed", e)
                         stateMachine.handleEvent(
@@ -125,6 +146,8 @@ fun PaymentFlowScreen(
                             } else {
                                 stateMachine.handleEvent(PaymentEvent.CardRequestFailed(PaymentError.RequestFailed))
                             }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
                         } catch (e: Exception) {
                             stateMachine.handleEvent(
                                 PaymentEvent.CardRequestFailed(
@@ -149,6 +172,9 @@ fun PaymentFlowScreen(
                             val result = viewModel.processCardPayment(context)
                             when {
                                 result.success -> stateMachine.handleEvent(PaymentEvent.PaymentCompleted(result.callNumber))
+                                result.unresolved -> stateMachine.handleEvent(
+                                    PaymentEvent.PaymentResolutionRequired()
+                                )
                                 result.timeout -> stateMachine.handleEvent(PaymentEvent.PaymentTimeout)
                                 else -> stateMachine.handleEvent(
                                     PaymentEvent.PaymentFailed(
@@ -156,6 +182,8 @@ fun PaymentFlowScreen(
                                     )
                                 )
                             }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
                         } catch (e: Exception) {
                             stateMachine.handleEvent(
                                 PaymentEvent.PaymentFailed(
@@ -218,12 +246,28 @@ fun PaymentFlowScreen(
                     language = state.language,
                     posTriggerFailed = if (debugCardSmEnabled) false else viewModel.posTriggerFailed,
                     onCancel = {
-                        viewModel.cancelCurrentTransaction(context)
-                        stateMachine.handleEvent(PaymentEvent.PaymentCancelled)
+                        launchManagedPaymentJob {
+                            when (val result = viewModel.cancelCurrentTransaction(context)) {
+                                CardPaymentCancellationResult.Cancelled ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentCancelled)
+                                is CardPaymentCancellationResult.Paid ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentCompleted(result.callNumber))
+                                is CardPaymentCancellationResult.Unresolved ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentResolutionRequired())
+                            }
+                        }
                     },
                     onTimeout = {
-                        viewModel.handlePaymentTimeout()
-                        stateMachine.handleEvent(PaymentEvent.PaymentTimeout)
+                        launchManagedPaymentJob {
+                            when (val result = viewModel.handlePaymentTimeout(context)) {
+                                CardPaymentCancellationResult.Cancelled ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentTimeout)
+                                is CardPaymentCancellationResult.Paid ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentCompleted(result.callNumber))
+                                is CardPaymentCancellationResult.Unresolved ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentResolutionRequired())
+                            }
+                        }
                     },
                     onDebugSuccess = if (debugCardSmEnabled) {
                         { stateMachine.handleEvent(PaymentEvent.CardRequestSuccess) }
@@ -247,12 +291,28 @@ fun PaymentFlowScreen(
                     language = state.language,
                     posTriggerFailed = if (debugCardSmEnabled) state.posTriggerFailed else viewModel.posTriggerFailed,
                     onCancel = {
-                        viewModel.cancelCurrentTransaction(context)
-                        stateMachine.handleEvent(PaymentEvent.PaymentCancelled)
+                        launchManagedPaymentJob {
+                            when (val result = viewModel.cancelCurrentTransaction(context)) {
+                                CardPaymentCancellationResult.Cancelled ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentCancelled)
+                                is CardPaymentCancellationResult.Paid ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentCompleted(result.callNumber))
+                                is CardPaymentCancellationResult.Unresolved ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentResolutionRequired())
+                            }
+                        }
                     },
                     onTimeout = {
-                        viewModel.handlePaymentTimeout()
-                        stateMachine.handleEvent(PaymentEvent.PaymentTimeout)
+                        launchManagedPaymentJob {
+                            when (val result = viewModel.handlePaymentTimeout(context)) {
+                                CardPaymentCancellationResult.Cancelled ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentTimeout)
+                                is CardPaymentCancellationResult.Paid ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentCompleted(result.callNumber))
+                                is CardPaymentCancellationResult.Unresolved ->
+                                    stateMachine.handleEvent(PaymentEvent.PaymentResolutionRequired())
+                            }
+                        }
                     },
                     onDebugSuccess = if (debugCardSmEnabled && state.paymentMethod == PaymentMethod.CARD) {
                         {
@@ -261,6 +321,8 @@ fun PaymentFlowScreen(
                                     viewModel.setPaymentMethodForFlow(PaymentMethod.CARD)
                                     val callNumber = viewModel.debugSimulateCardPaid(context)
                                     stateMachine.handleEvent(PaymentEvent.PaymentCompleted(callNumber))
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
                                 } catch (e: Exception) {
                                     stateMachine.handleEvent(
                                         PaymentEvent.PaymentFailed(
@@ -308,6 +370,7 @@ fun PaymentFlowScreen(
                     total = total,
                     paymentError = paymentError,
                     printError = viewModel.printError,
+                    selectionEnabled = state.canRetry,
                     onSelect = { paymentMethod, _ ->
                         stateMachine.handleEvent(PaymentEvent.SelectPaymentMethod(paymentMethod))
                     },

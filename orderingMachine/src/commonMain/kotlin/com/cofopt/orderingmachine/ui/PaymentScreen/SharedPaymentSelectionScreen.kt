@@ -61,6 +61,7 @@ fun SharedPaymentSelectionScreen(
     total: Double,
     paymentError: String? = null,
     printError: Boolean = false,
+    selectionEnabled: Boolean = true,
     cardPaymentEnabled: Boolean,
     isCardSystemConnected: Boolean?,
     isCheckingCardSystem: Boolean,
@@ -97,7 +98,8 @@ fun SharedPaymentSelectionScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(selectionEnabled) {
+        if (!selectionEnabled) return@LaunchedEffect
         while (true) {
             delay(1000)
             val now = currentTimeMillis()
@@ -131,6 +133,15 @@ fun SharedPaymentSelectionScreen(
         ) {
             if (paymentError != null) {
                 val errorMessage = when {
+                    !selectionEnabled -> tr(
+                        language,
+                        "Payment result is still being verified. Do not retry or use another payment method; please contact staff.",
+                        "支付结果仍在核验中。请勿重试或更换支付方式，并联系工作人员。",
+                        "De betaalstatus wordt nog gecontroleerd. Probeer niet opnieuw en kies geen andere betaalmethode; neem contact op met personeel.",
+                        ja = "支払い結果を確認中です。再試行や別の支払い方法を使用せず、スタッフにお声がけください。",
+                        tr = "Ödeme sonucu hâlâ doğrulanıyor. Yeniden denemeyin veya başka bir ödeme yöntemi kullanmayın; personele başvurun."
+                    )
+
                     paymentError.contains("timeout") || paymentError.contains("超时") -> tr(
                         language,
                         "Payment timeout. Please retry or select payment at counter.",
@@ -283,6 +294,7 @@ fun SharedPaymentSelectionScreen(
                                 title = tr(language, "Card", "刷卡", "Kaart", ja = "カード", tr = "Kart"),
                                 emoji = "💳",
                                 subEmojis = emptyList(),
+                                enabled = selectionEnabled,
                                 onClick = {
                                     lastInteractionMs = currentTimeMillis()
                                     onSelect(PaymentMethod.CARD, false)
@@ -294,6 +306,7 @@ fun SharedPaymentSelectionScreen(
                                 title = tr(language, "Cash", "现金", "Contant", ja = "現金", tr = "Nakit"),
                                 emoji = "💵",
                                 subEmojis = emptyList(),
+                                enabled = selectionEnabled,
                                 onClick = {
                                     lastInteractionMs = currentTimeMillis()
                                     onSelect(PaymentMethod.COUNTER, false)
@@ -320,6 +333,7 @@ fun SharedPaymentSelectionScreen(
                                 title = tr(language, "Cash", "现金", "Contant", ja = "現金", tr = "Nakit"),
                                 emoji = "💵",
                                 subEmojis = emptyList(),
+                                enabled = selectionEnabled,
                                 onClick = {
                                     lastInteractionMs = currentTimeMillis()
                                     onSelect(PaymentMethod.COUNTER, false)
@@ -409,6 +423,7 @@ fun SharedPaymentSelectionScreen(
                         title = tr(language, "Cash", "现金", "Contant", ja = "現金", tr = "Nakit"),
                         emoji = "💵",
                         subEmojis = emptyList(),
+                        enabled = selectionEnabled,
                         onClick = {
                             lastInteractionMs = currentTimeMillis()
                             onSelect(PaymentMethod.COUNTER, false)
@@ -427,6 +442,7 @@ fun SharedPaymentSelectionScreen(
                     modifier = Modifier
                         .width(300.dp)
                         .height(120.dp),
+                    enabled = selectionEnabled,
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White),
                     shape = RoundedCornerShape(18.dp)
                 ) {

@@ -12,7 +12,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 object DishesRepository {
     private const val MENU_PREFS_NAME = "menu_seed_state"
@@ -29,10 +33,11 @@ object DishesRepository {
     private lateinit var appContext: Context
 
     @Volatile private var loaded: Boolean = false
+    private val loadMutex = Mutex()
+    private var observeJob: Job? = null
 
     suspend fun ensureLoaded(context: Context) {
-        if (loaded) return
-        synchronized(this) {
+        loadMutex.withLock {
             if (loaded) return
 
             if (!initialized) {
@@ -41,79 +46,61 @@ object DishesRepository {
                 dishDao = db.dishDao()
                 initialized = true
             }
-        }
 
-        val seed = MenuCsvParser.parseDishes(context)
-        if (seed.isEmpty()) return
-
-        try {
-            normalizeLegacyIds(context)
-        } catch (_: Exception) {
-            // ignore
-        }
-
-        // When seed version changes, hard-reset menu rows to the new default seed.
-        // This is needed when menu ids are reused but names/categories/images are replaced.
-        scope.launch {
-            val prefs = this@DishesRepository.appContext.getSharedPreferences(MENU_PREFS_NAME, Context.MODE_PRIVATE)
-            val storedVersion = prefs.getInt(KEY_MENU_SEED_VERSION, 0)
-            val needsSeedReset = storedVersion < MENU_SEED_VERSION
-
-            if (needsSeedReset) {
-                dishDao.clearAll()
-                dishDao.insertAll(seed)
-                prefs.edit().putInt(KEY_MENU_SEED_VERSION, MENU_SEED_VERSION).apply()
-                Log.i("DishesRepository", "Applied menu seed reset to version=$MENU_SEED_VERSION")
-            } else {
-                dishDao.insertAllIgnore(seed)
+            val seed = try {
+                MenuCsvParser.parseDishes(context)
+            } catch (e: Exception) {
+                // A damaged optional seed must not take the LAN API offline when Room already
+                // contains a usable menu. Surface the error and continue with persisted rows.
+                Log.e("DishesRepository", "Failed to parse menu seed; loading persisted menu", e)
+                emptyList()
             }
-        }
+            if (seed.isNotEmpty()) {
+                try {
+                    normalizeLegacyIds(seed)
+                } catch (_: Exception) {
+                    // A failed legacy migration must not prevent loading the existing menu.
+                }
 
-        scope.launch {
-            dishDao.observeAll().collectLatest { entities ->
-                _dishes.value = entities.map { e ->
-                    DishState(
-                        id = e.id,
-                        category = e.category,
-                        nameZh = e.nameZh,
-                        nameEn = e.nameEn,
-                        nameNl = e.nameNl,
-                        nameJa = e.nameJa,
-                        nameTr = e.nameTr,
-                        priceEur = e.priceEur,
-                        discountedPrice = e.discountedPriceEur,
-                        soldOut = e.soldOut,
-                        kitchenPrint = e.kitchenPrint,
-                        chooseVegan = e.chooseVegan,
-                        chooseSource = e.chooseSource,
-                        chooseDrink = e.chooseDrink,
-                        containsEggs = e.containsEggs,
-                        containsGluten = e.containsGluten,
-                        containsLupin = e.containsLupin,
-                        containsMilk = e.containsMilk,
-                        containsMustard = e.containsMustard,
-                        containsNuts = e.containsNuts,
-                        containsPeanuts = e.containsPeanuts,
-                        containsCrustaceans = e.containsCrustaceans,
-                        containsCelery = e.containsCelery,
-                        containsSesameSeeds = e.containsSesameSeeds,
-                        containsSoybeans = e.containsSoybeans,
-                        containsFish = e.containsFish,
-                        containsMolluscs = e.containsMolluscs,
-                        containsSulphites = e.containsSulphites,
-                        imageBase64 = e.imageBase64
-                    )
+                // Finish seeding before reporting the repository as loaded. Previously these
+                // writes ran in a detached coroutine, so /menu could return an empty or stale list.
+                val prefs = appContext.getSharedPreferences(MENU_PREFS_NAME, Context.MODE_PRIVATE)
+                val storedVersion = prefs.getInt(KEY_MENU_SEED_VERSION, 0)
+                val needsSeedReset = storedVersion < MENU_SEED_VERSION
+                if (needsSeedReset) {
+                    dishDao.replaceAll(seed)
+                    val versionSaved = withContext(Dispatchers.IO) {
+                        prefs.edit()
+                            .putInt(KEY_MENU_SEED_VERSION, MENU_SEED_VERSION)
+                            .commit()
+                    }
+                    check(versionSaved) {
+                        "Failed to persist menu seed version=$MENU_SEED_VERSION"
+                    }
+                    Log.i("DishesRepository", "Applied menu seed reset to version=$MENU_SEED_VERSION")
+                } else {
+                    dishDao.insertAllIgnore(seed)
                 }
             }
-        }
 
-        loaded = true
+            val persistedDishes = dishDao.getAll()
+            check(persistedDishes.isNotEmpty()) {
+                "Menu seed is unavailable and Room contains no persisted dishes"
+            }
+            _dishes.value = persistedDishes.map { it.toState() }
+            if (observeJob == null) {
+                observeJob = scope.launch {
+                    dishDao.observeAll().collectLatest { entities ->
+                        _dishes.value = entities.map { it.toState() }
+                    }
+                }
+            }
+
+            loaded = true
+        }
     }
 
-    private suspend fun normalizeLegacyIds(context: Context) {
-        val seed = MenuCsvParser.parseDishes(context)
-        if (seed.isEmpty()) return
-
+    private suspend fun normalizeLegacyIds(seed: List<DishEntity>) {
         val seedById = seed.associateBy { it.id }
         val currentIds = try {
             dishDao.getAllIds().toHashSet()
@@ -336,6 +323,40 @@ object DishesRepository {
             containsMolluscs = containsMolluscs,
             containsSulphites = containsSulphites,
             imageBase64 = imageBase64
+        )
+    }
+
+    private fun DishEntity.toState(): DishState {
+        return DishState(
+            id = id,
+            category = category,
+            nameZh = nameZh,
+            nameEn = nameEn,
+            nameNl = nameNl,
+            nameJa = nameJa,
+            nameTr = nameTr,
+            priceEur = priceEur,
+            discountedPrice = discountedPriceEur,
+            soldOut = soldOut,
+            kitchenPrint = kitchenPrint,
+            chooseVegan = chooseVegan,
+            chooseSource = chooseSource,
+            chooseDrink = chooseDrink,
+            containsEggs = containsEggs,
+            containsGluten = containsGluten,
+            containsLupin = containsLupin,
+            containsMilk = containsMilk,
+            containsMustard = containsMustard,
+            containsNuts = containsNuts,
+            containsPeanuts = containsPeanuts,
+            containsCrustaceans = containsCrustaceans,
+            containsCelery = containsCelery,
+            containsSesameSeeds = containsSesameSeeds,
+            containsSoybeans = containsSoybeans,
+            containsFish = containsFish,
+            containsMolluscs = containsMolluscs,
+            containsSulphites = containsSulphites,
+            imageBase64 = imageBase64,
         )
     }
 }

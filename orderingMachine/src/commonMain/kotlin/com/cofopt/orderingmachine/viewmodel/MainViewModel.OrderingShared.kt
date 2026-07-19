@@ -1,7 +1,13 @@
 package com.cofopt.orderingmachine.viewmodel
 
-import com.cofopt.orderingmachine.currentTimeMillis
+import com.cofopt.orderingmachine.CartItem
+import com.cofopt.orderingmachine.currentEpochMillis
+import com.cofopt.orderingmachine.network.CashRegisterOrderItemPayload
+import com.cofopt.orderingmachine.network.CashRegisterOrderPayload
 import com.cofopt.orderingmachine.network.CustomizationPrintLinePayload
+import com.cofopt.orderingmachine.network.DeviceConfig
+import com.cofopt.orderingmachine.network.OrderingPlatformContext
+import kotlin.random.Random
 
 internal fun customizationLinesForPrintImpl(customizations: Map<String, String>): List<CustomizationPrintLinePayload> {
     if (customizations.isEmpty()) return emptyList()
@@ -52,10 +58,44 @@ internal fun customizationLinesForPrintImpl(customizations: Map<String, String>)
     return lines
 }
 
-internal fun fallbackCallNumberImpl(): Int {
-    return (currentTimeMillis() % 10000).toInt()
-}
+internal fun buildCashRegisterOrderPayloadImpl(
+    context: OrderingPlatformContext,
+    cartItems: List<CartItem>,
+    total: Double,
+    dineIn: Boolean,
+    paymentMethod: String,
+    paymentStatus: String,
+    createdAtMillis: Long = currentEpochMillis(),
+): CashRegisterOrderPayload {
+    val deviceName = DeviceConfig.deviceName(context)
+    val deviceSuffix = deviceName
+        .filter { it.isLetterOrDigit() }
+        .takeLast(12)
+        .ifBlank { "device" }
+    val nonce = Random.nextInt(100_000, 1_000_000)
+    val normalizedMethod = paymentMethod.trim().uppercase()
+    val normalizedStatus = paymentStatus.trim().uppercase()
 
-internal fun formatFallbackCallNumberImpl(callNumber: Int): String {
-    return callNumber.toString().padStart(4, '0')
+    return CashRegisterOrderPayload(
+        orderId = "OM_${deviceSuffix}_${createdAtMillis}_$nonce",
+        createdAtMillis = createdAtMillis,
+        source = "KIOSK",
+        deviceName = deviceName,
+        dineIn = dineIn,
+        paymentMethod = normalizedMethod,
+        paymentStatus = normalizedStatus,
+        total = total,
+        items = cartItems.map { item ->
+            CashRegisterOrderItemPayload(
+                menuItemId = item.menuItem.id,
+                nameEn = item.menuItem.nameEn,
+                nameZh = item.menuItem.nameZh,
+                nameNl = item.menuItem.nameNl,
+                quantity = item.quantity,
+                unitPrice = item.menuItem.price,
+                customizations = item.customizations,
+                customizationLines = customizationLinesForPrintImpl(item.customizations),
+            )
+        },
+    )
 }

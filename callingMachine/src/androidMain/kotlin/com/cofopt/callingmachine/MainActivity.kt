@@ -21,6 +21,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.Inet4Address
@@ -33,6 +34,10 @@ import java.util.concurrent.atomic.AtomicLong
 class MainActivity : ComponentActivity() {
 
     private var wsServer: CallingWebSocketServer? = null
+    private var wsServerStartJob: Job? = null
+    private var wsServerRetryJob: Job? = null
+    private var wsServerLifecycleGeneration: Int = 0
+    private var activityStarted: Boolean = false
     private val wsPort = 9090
     private var nsdAdvertiser: CallingNsdAdvertiser? = null
     private var cashRegisterAutoConnectJob: Job? = null
@@ -101,9 +106,12 @@ class MainActivity : ComponentActivity() {
         }
 
         override fun onConnectionCountChanged(count: Int) {
+            val closeInfo = synchronized(CallingStateCoordinator.lock) {
+                CallingState.lastCloseInfo
+            }
             runOnUiThread {
                 connectionCount = count
-                lastCloseInfo = CallingState.lastCloseInfo
+                lastCloseInfo = closeInfo
             }
         }
     }
@@ -128,13 +136,15 @@ class MainActivity : ComponentActivity() {
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             val msg = throwable.message ?: throwable.javaClass.simpleName
             val top = throwable.stackTrace?.firstOrNull()?.let { "${it.className}.${it.methodName}:${it.lineNumber}" }
-            CallingState.updateLastCloseInfo(
-                if (top.isNullOrBlank()) {
-                    "uncaught=${throwable.javaClass.simpleName}: $msg"
-                } else {
-                    "uncaught=${throwable.javaClass.simpleName}: $msg @ $top"
-                }
-            )
+            synchronized(CallingStateCoordinator.lock) {
+                CallingState.updateLastCloseInfo(
+                    if (top.isNullOrBlank()) {
+                        "uncaught=${throwable.javaClass.simpleName}: $msg"
+                    } else {
+                        "uncaught=${throwable.javaClass.simpleName}: $msg @ $top"
+                    }
+                )
+            }
             previousHandler?.uncaughtException(thread, throwable)
         }
 
@@ -151,7 +161,11 @@ class MainActivity : ComponentActivity() {
                 localIp = localIpText,
                 alertOverlayNumber = alertOverlayNumber,
                 alertOverlayNonce = alertOverlayNonce,
-                isPreparingNumber = { num -> CallingState.isNewPreparingNumber(num) }
+                isPreparingNumber = { num ->
+                    synchronized(CallingStateCoordinator.lock) {
+                        CallingState.isNewPreparingNumber(num)
+                    }
+                }
             )
         }
     }
@@ -187,7 +201,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun announceReadyNumber(number: Int) {
-        val announcement = readyAnnouncement(number, CallingState.voiceLanguage())
+        val voiceLanguage = synchronized(CallingStateCoordinator.lock) {
+            CallingState.voiceLanguage()
+        }
+        val announcement = readyAnnouncement(number, voiceLanguage)
         val locale = Locale.forLanguageTag(announcement.localeTag)
         speak(locale, announcement.text, announcement.rate)
     }
@@ -209,43 +226,110 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        localIpText = resolveLocalIpv4Address() ?: "-"
-
-        if (wsServer == null) {
-            wsServer = CallingWebSocketServer(wsPort) { host ->
-                CashRegisterPeerConfig.saveLastCashRegisterIp(this, host)
-                Log.d("MainActivity", "Connection Event: CASHREGISTER_IP_SAVED | host=$host")
-            }
-            try {
-                wsServer?.start(5000, false)
-                if (nsdAdvertiser == null) {
-                    nsdAdvertiser = CallingNsdAdvertiser(this)
-                }
-                nsdAdvertiser?.register(wsPort)
-                serverStartError = null
-            } catch (e: Exception) {
-                serverStartError = e.message ?: e.javaClass.simpleName
-                wsServer = null
-            }
+        activityStarted = true
+        // Register before the server can deliver callbacks. Conversely,
+        // onStop stops the server before removing this listener.
+        synchronized(CallingStateCoordinator.lock) {
+            CallingState.addListener(listener)
         }
+        localIpText = resolveLocalIpv4Address() ?: "-"
+        startWebSocketServer()
 
         cashRegisterAutoConnectJob?.cancel()
         cashRegisterAutoConnectJob = lifecycleScope.launch {
             attemptAutoConnectCashRegister()
         }
-
-        CallingState.addListener(listener)
     }
 
     override fun onStop() {
+        activityStarted = false
+        wsServerLifecycleGeneration++
+        wsServerStartJob?.cancel()
+        wsServerRetryJob?.cancel()
+        wsServerRetryJob = null
         cashRegisterAutoConnectJob?.cancel()
         cashRegisterAutoConnectJob = null
         nsdAdvertiser?.stop()
         nsdAdvertiser = null
-        CallingState.removeListener(listener)
         wsServer?.stop()
         wsServer = null
+        synchronized(CallingStateCoordinator.lock) {
+            CallingState.removeListener(listener)
+        }
         super.onStop()
+    }
+
+    private fun startWebSocketServer() {
+        if (
+            !activityStarted ||
+            wsServer != null ||
+            wsServerStartJob != null ||
+            wsServerRetryJob != null
+        ) return
+
+        val generation = wsServerLifecycleGeneration
+        val candidate = CallingWebSocketServer(wsPort) { host ->
+            CashRegisterPeerConfig.saveLastCashRegisterIp(this, host)
+            Log.d("MainActivity", "Connection Event: CASHREGISTER_IP_SAVED | host=$host")
+        }
+
+        wsServerStartJob = lifecycleScope.launch {
+            var adopted = false
+            var retrySameGeneration = false
+            try {
+                val startFailure = withContext(Dispatchers.IO) {
+                    runCatching { candidate.start(5000, false) }.exceptionOrNull()
+                }
+
+                if (!activityStarted || generation != wsServerLifecycleGeneration) return@launch
+
+                if (startFailure != null) {
+                    serverStartError = startFailure.message ?: startFailure.javaClass.simpleName
+                    retrySameGeneration = true
+                    return@launch
+                }
+
+                wsServer = candidate
+                adopted = true
+                if (nsdAdvertiser == null) {
+                    nsdAdvertiser = CallingNsdAdvertiser(this@MainActivity)
+                }
+                nsdAdvertiser?.register(wsPort)
+                serverStartError = null
+            } finally {
+                if (!adopted) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        runCatching { candidate.stop() }
+                            .onFailure { Log.w("MainActivity", "WebSocket startup cleanup failed", it) }
+                    }
+                }
+                wsServerStartJob = null
+
+                // A rapid stop/start can cancel a bind that is still completing.
+                // Start the current lifecycle generation once cleanup releases
+                // the port instead of racing two server instances.
+                if (activityStarted && generation != wsServerLifecycleGeneration && wsServer == null) {
+                    startWebSocketServer()
+                } else if (
+                    retrySameGeneration &&
+                    activityStarted &&
+                    generation == wsServerLifecycleGeneration &&
+                    wsServer == null
+                ) {
+                    wsServerRetryJob = lifecycleScope.launch {
+                        try {
+                            delay(WS_SERVER_RETRY_DELAY_MILLIS)
+                            wsServerRetryJob = null
+                            if (activityStarted && generation == wsServerLifecycleGeneration) {
+                                startWebSocketServer()
+                            }
+                        } finally {
+                            wsServerRetryJob = null
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun attemptAutoConnectCashRegister() {
@@ -266,7 +350,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private suspend fun probeCashRegisterHealth(host: String, port: Int): Boolean = withContext(Dispatchers.IO) {
-        val url = URL("http://$host:$port/health")
+        val normalizedHost = host.trim().removePrefix("[").removeSuffix("]")
+        val urlHost = if (normalizedHost.contains(':')) "[$normalizedHost]" else normalizedHost
+        val url = URL("http://$urlHost:$port/health")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 1500
@@ -279,30 +365,33 @@ class MainActivity : ComponentActivity() {
             conn.responseCode in 200..299
         }.getOrDefault(false).also {
             conn.disconnect()
+        }
     }
-}
 
-private fun resolveLocalIpv4Address(): String? {
-    return runCatching {
-        val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
-        interfaces.toList()
-            .asSequence()
-            .filter { it.isUp && !it.isLoopback && !it.isVirtual }
-            .flatMap { it.inetAddresses.toList().asSequence() }
-            .filterIsInstance<Inet4Address>()
-            .map { it.hostAddress.orEmpty() }
-            .firstOrNull { ip ->
-                ip.isNotBlank() &&
-                    !ip.startsWith("127.") &&
-                    (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."))
-            }
-            ?: interfaces.toList()
+    private fun resolveLocalIpv4Address(): String? {
+        return runCatching {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+            interfaces.toList()
                 .asSequence()
+                .filter { it.isUp && !it.isLoopback && !it.isVirtual }
                 .flatMap { it.inetAddresses.toList().asSequence() }
                 .filterIsInstance<Inet4Address>()
                 .map { it.hostAddress.orEmpty() }
-                .firstOrNull { ip -> ip.isNotBlank() && !ip.startsWith("127.") }
-    }.getOrNull()
-}
+                .firstOrNull { ip ->
+                    ip.isNotBlank() &&
+                        !ip.startsWith("127.") &&
+                        (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172."))
+                }
+                ?: interfaces.toList()
+                    .asSequence()
+                    .flatMap { it.inetAddresses.toList().asSequence() }
+                    .filterIsInstance<Inet4Address>()
+                    .map { it.hostAddress.orEmpty() }
+                    .firstOrNull { ip -> ip.isNotBlank() && !ip.startsWith("127.") }
+        }.getOrNull()
+    }
 
+    private companion object {
+        const val WS_SERVER_RETRY_DELAY_MILLIS = 2_000L
+    }
 }

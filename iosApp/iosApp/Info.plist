@@ -4,5 +4,16 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>ComposeXPOS connects to cash register, ordering, and calling displays on your local network.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>ComposeXPOSCallingHost</key>
+	<string>$(COMPOSEXPOS_CALLING_HOST)</string>
+	<key>ComposeXPOSCallingPort</key>
+	<string>$(COMPOSEXPOS_CALLING_PORT)</string>
 </dict>
 </plist>

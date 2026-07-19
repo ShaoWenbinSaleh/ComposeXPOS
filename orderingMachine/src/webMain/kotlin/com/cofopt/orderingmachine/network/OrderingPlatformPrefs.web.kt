@@ -70,6 +70,40 @@ actual object OrderingPlatformPrefs {
         }
     }
 
+    actual fun putStringDurable(
+        context: OrderingPlatformContext,
+        prefsName: String,
+        key: String,
+        value: String,
+    ): Boolean = runCatching {
+        window.localStorage.setItem(storageKey(prefsName, key), value)
+    }.isSuccess
+
+    actual fun getStringsWithPrefix(
+        context: OrderingPlatformContext,
+        prefsName: String,
+        keyPrefix: String,
+    ): Map<String, String>? = runCatching {
+        val qualifiedPrefix = storageKey(prefsName, keyPrefix)
+        buildMap {
+            for (index in 0 until window.localStorage.length) {
+                val qualifiedKey = window.localStorage.key(index) ?: continue
+                if (!qualifiedKey.startsWith(qualifiedPrefix)) continue
+                val value = window.localStorage.getItem(qualifiedKey) ?: continue
+                val logicalKey = keyPrefix + qualifiedKey.removePrefix(qualifiedPrefix)
+                put(logicalKey, value)
+            }
+        }
+    }.getOrNull()
+
+    actual fun removeStringDurable(
+        context: OrderingPlatformContext,
+        prefsName: String,
+        key: String,
+    ): Boolean = runCatching {
+        window.localStorage.removeItem(storageKey(prefsName, key))
+    }.isSuccess
+
     actual fun putInt(
         context: OrderingPlatformContext,
         prefsName: String,

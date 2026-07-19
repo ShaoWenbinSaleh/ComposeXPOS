@@ -63,6 +63,11 @@ fun CallingScreen() {
         "号码超出范围",
         "Nummer is buiten bereik"
     )
+    val manualPersistenceText = tr(
+        "Could not save the calling state",
+        "无法保存叫号状态",
+        "De oproepstatus kon niet worden opgeslagen"
+    )
 
     var showAddDialog by remember { mutableStateOf(false) }
     var manualInput by remember { mutableStateOf("") }
@@ -129,7 +134,9 @@ fun CallingScreen() {
                             gridItems(filteredPreparing, key = { it }) { n ->
                                 CallingNumberCard(
                                     number = n,
-                                    onClick = { CallingPlatform.markReady(n) }
+                                    onClick = {
+                                        CallingPlatform.updateOrderStatusByCallNumber(n, "READY")
+                                    }
                                 )
                             }
                         }
@@ -272,6 +279,9 @@ fun CallingScreen() {
                                 ManualCallAddResult.Added -> showAddDialog = false
                                 ManualCallAddResult.Duplicate -> manualInputError = manualDuplicateText
                                 ManualCallAddResult.OutOfRange -> manualInputError = manualOutOfRangeText
+                                ManualCallAddResult.PersistenceFailed -> {
+                                    manualInputError = manualPersistenceText
+                                }
                             }
                         }
                     ) {

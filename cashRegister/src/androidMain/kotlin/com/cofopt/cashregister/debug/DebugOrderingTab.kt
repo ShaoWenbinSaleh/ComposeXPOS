@@ -16,6 +16,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -81,8 +82,12 @@ internal fun OrderingMachinesTab() {
     }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    DisposableEffect(nsdBrowser) {
         nsdBrowser.start()
+        onDispose { nsdBrowser.stop() }
+    }
+
+    LaunchedEffect(nsdBrowser) {
         val preferredHost = normalizeOrderingHostInput(manualHost).takeIf { it.isNotBlank() }
         val preferredPort = manualPort.toIntOrNull()
         lanDiscoveredServices = withContext(Dispatchers.IO) {
@@ -372,8 +377,9 @@ private val linkJson = Json {
 
 internal fun queryOrderingMachineCashRegisterConfig(orderingHost: String, orderingPort: Int): Pair<String, Int>? {
     if (orderingHost.isBlank() || orderingPort <= 0) return null
+    val targetUrl = orderingMachineHttpUrl(orderingHost, orderingPort, "/cashregister") ?: return null
     return runCatching {
-        val conn = (URL("http://${orderingHost.trim()}:$orderingPort/cashregister").openConnection() as HttpURLConnection)
+        val conn = (targetUrl.openConnection() as HttpURLConnection)
         try {
             conn.requestMethod = "GET"
             conn.connectTimeout = 1500
@@ -419,8 +425,10 @@ internal fun pushCashRegisterConfigToOrderingMachine(
         sharedKey = null
     )
     val requestBody = linkJson.encodeToString(request)
+    val targetUrl = orderingMachineHttpUrl(orderingHost, orderingPort, "/cashregister")
+        ?: return "ERROR: Invalid OrderingMachine target"
     return runCatching {
-        val conn = (URL("http://${orderingHost.trim()}:$orderingPort/cashregister").openConnection() as HttpURLConnection)
+        val conn = (targetUrl.openConnection() as HttpURLConnection)
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 1800
@@ -658,9 +666,8 @@ private fun normalizeOrderingHostInput(raw: String?): String {
 }
 
 private fun probeOrderingHealth(host: String, port: Int): Boolean {
-    val conn = runCatching {
-        URL("http://$host:$port/health").openConnection() as HttpURLConnection
-    }.getOrNull() ?: return false
+    val url = orderingMachineHttpUrl(host, port, "/health") ?: return false
+    val conn = runCatching { url.openConnection() as HttpURLConnection }.getOrNull() ?: return false
     return try {
         conn.requestMethod = "GET"
         conn.connectTimeout = 450
@@ -684,9 +691,8 @@ private fun probeOrderingWebInstance(host: String, port: Int): Boolean {
 }
 
 private fun probeOrderingDiscoveryJson(host: String, port: Int): Boolean {
-    val conn = runCatching {
-        URL("http://$host:$port/composexpos-ordering.json").openConnection() as HttpURLConnection
-    }.getOrNull() ?: return false
+    val url = orderingMachineHttpUrl(host, port, "/composexpos-ordering.json") ?: return false
+    val conn = runCatching { url.openConnection() as HttpURLConnection }.getOrNull() ?: return false
     return try {
         conn.requestMethod = "GET"
         conn.connectTimeout = 420
@@ -706,9 +712,8 @@ private fun probeOrderingDiscoveryJson(host: String, port: Int): Boolean {
 }
 
 private fun probeOrderingWebMarkerAtPath(host: String, port: Int, path: String): Boolean {
-    val conn = runCatching {
-        URL("http://$host:$port$path").openConnection() as HttpURLConnection
-    }.getOrNull() ?: return false
+    val url = orderingMachineHttpUrl(host, port, path) ?: return false
+    val conn = runCatching { url.openConnection() as HttpURLConnection }.getOrNull() ?: return false
     return try {
         conn.instanceFollowRedirects = true
         conn.requestMethod = "GET"
@@ -733,4 +738,16 @@ private fun probeOrderingWebMarkerAtPath(host: String, port: Int, path: String):
     } finally {
         runCatching { conn.disconnect() }
     }
+}
+
+private fun orderingMachineHttpUrl(rawHost: String, port: Int, path: String): URL? {
+    if (port !in 1..65535 || !path.startsWith('/') || path.startsWith("//")) return null
+    val host = normalizeOrderingHostInput(rawHost)
+    if (!isValidOrderingScanHost(host)) return null
+    val authority = if (host.contains(':')) {
+        "[${host.replace("%", "%25")}]"
+    } else {
+        host
+    }
+    return runCatching { URL("http://$authority:$port$path") }.getOrNull()
 }

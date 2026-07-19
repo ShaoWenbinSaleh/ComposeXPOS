@@ -107,6 +107,18 @@ object CallingState {
 
     fun voiceLanguage(): CallingLanguage = voiceLanguage
 
+    /**
+     * Returns the complete display state for a client that connected after the
+     * last source update. WebSocket viewers must not have to wait for the next
+     * order change before they can render the board.
+     */
+    fun currentSnapshot(): CallingStateSnapshot = CallingStateSnapshot(
+        preparing = preparing.toList(),
+        ready = ready.toList(),
+        displayLanguage = displayLanguage,
+        voiceLanguage = voiceLanguage,
+    )
+
     fun alertNumber(number: Int) {
         for (listener in listeners) {
             try {
@@ -138,7 +150,16 @@ object CallingState {
 
     fun isNewPreparingNumber(number: Int): Boolean {
         val now = nowMillis()
-        pruneExpiredPreparingNumbers(now)
+        // This is queried by the UI while WebSocket callbacks can update the
+        // expiry map. Keep the read side free of mutations so it cannot
+        // overwrite a freshly added entry with a pruned stale copy.
         return (preparingNumberExpiry[number] ?: 0L) > now
     }
 }
+
+data class CallingStateSnapshot(
+    val preparing: List<Int>,
+    val ready: List<Int>,
+    val displayLanguage: CallingLanguage,
+    val voiceLanguage: CallingLanguage,
+)

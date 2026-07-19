@@ -31,6 +31,9 @@ actual object CallingPlatform {
     }
 
     actual fun updateOrderStatusByCallNumber(callNumber: Int, status: String) {
+        if (status.trim().uppercase() == "READY") {
+            CallingRepository.markReady(callNumber)
+        }
         OrdersRepository.updateOrderStatusByCallNumber(callNumber, status)
     }
 

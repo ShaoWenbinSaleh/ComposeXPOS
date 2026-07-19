@@ -1,6 +1,5 @@
 package com.cofopt.orderingmachine.network
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -23,7 +22,10 @@ data class CashRegisterOrderPayload(
     val deviceName: String,
     val dineIn: Boolean,
     val paymentMethod: String,
-    @SerialName("status") val paymentStatus: String = "PAID",
+    val paymentStatus: String = "PAID",
+    // Keep the legacy field during the protocol transition. Current servers
+    // prefer paymentStatus; older servers still read status.
+    val status: String = paymentStatus,
     val callNumber: Int? = null,
     val total: Double,
     val items: List<CashRegisterOrderItemPayload>

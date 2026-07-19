@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.lifecycleScope
+import com.cofopt.orderingmachine.network.CashRegisterClient
 import com.cofopt.orderingmachine.ui.theme.OrderingMachineTheme
 import com.cofopt.orderingmachine.network.OrderingPresenceServer
 import com.cofopt.orderingmachine.network.ComposeXPOSOrderingNsdAdvertiser
@@ -37,11 +39,16 @@ import com.cofopt.orderingmachine.ui.CheckoutScreen.CheckoutScreen
 import com.cofopt.orderingmachine.ui.HomeScreen.ModeSelectionScreen
 import com.cofopt.orderingmachine.ui.OrderingScreen.OrderingScreen
 import com.cofopt.orderingmachine.ui.PaymentScreen.PaymentFlowScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     companion object {
         private const val ORDERING_PRESENCE_PORT = 19081
         private const val MENU_SYNC_INTERVAL_MS = 15_000L
+        private const val PRESENCE_RETRY_INTERVAL_MS = 2_000L
     }
 
     private val viewModel: MainViewModel by viewModels {
@@ -49,6 +56,8 @@ class MainActivity : ComponentActivity() {
     }
     private var nsdAdvertiser: ComposeXPOSOrderingNsdAdvertiser? = null
     private var presenceServer: OrderingPresenceServer? = null
+    private var outboxRetryJob: Job? = null
+    private var activityStarted = false
 
     private var keepSplashOnScreen: Boolean = true
     private val handler = Handler(Looper.getMainLooper())
@@ -57,7 +66,8 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.insetsController?.let { controller ->
                 controller.hide(WindowInsets.Type.systemBars())
-                controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_DEFAULT
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         } else {
             @Suppress("DEPRECATION")
@@ -83,8 +93,13 @@ class MainActivity : ComponentActivity() {
     private val menuSyncRunnable = object : Runnable {
         override fun run() {
             viewModel.refreshMenuFromCashRegister(this@MainActivity)
+            retryPendingOrders()
             handler.postDelayed(this, MENU_SYNC_INTERVAL_MS)
         }
+    }
+
+    private val presenceRetryRunnable = Runnable {
+        if (activityStarted) startPresenceServices()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -142,19 +157,53 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        activityStarted = true
         viewModel.refreshMenuFromCashRegister(this)
+        retryPendingOrders()
+        viewModel.recoverPendingCardPayment(this)
         handler.postDelayed(menuSyncRunnable, MENU_SYNC_INTERVAL_MS)
+        startPresenceServices()
+    }
+
+    private fun startPresenceServices() {
+        handler.removeCallbacks(presenceRetryRunnable)
         if (presenceServer == null) {
-            presenceServer = OrderingPresenceServer(this, ORDERING_PRESENCE_PORT).also { it.start() }
+            val candidate = OrderingPresenceServer(this, ORDERING_PRESENCE_PORT)
+            if (candidate.start()) {
+                presenceServer = candidate
+            } else {
+                Log.e("MainActivity", "Ordering presence server did not start; NSD advertisement skipped")
+                handler.postDelayed(presenceRetryRunnable, PRESENCE_RETRY_INTERVAL_MS)
+                return
+            }
         }
-        if (nsdAdvertiser == null) {
-            nsdAdvertiser = ComposeXPOSOrderingNsdAdvertiser(this)
+        if (presenceServer != null) {
+            if (nsdAdvertiser == null) {
+                nsdAdvertiser = ComposeXPOSOrderingNsdAdvertiser(this)
+            }
+            nsdAdvertiser?.register(ORDERING_PRESENCE_PORT)
         }
-        nsdAdvertiser?.register(ORDERING_PRESENCE_PORT)
+    }
+
+    private fun retryPendingOrders() {
+        if (outboxRetryJob?.isActive == true) return
+        outboxRetryJob = lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                CashRegisterClient.retryPendingOrders(this@MainActivity)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w("MainActivity", "Pending order replay failed", error)
+            }
+        }
     }
 
     override fun onStop() {
+        activityStarted = false
         handler.removeCallbacks(menuSyncRunnable)
+        handler.removeCallbacks(presenceRetryRunnable)
+        outboxRetryJob?.cancel()
+        outboxRetryJob = null
         nsdAdvertiser?.stop()
         nsdAdvertiser = null
         presenceServer?.stop()
@@ -248,7 +297,9 @@ private fun OrderApp(viewModel: MainViewModel) {
                 dineIn = viewModel.orderMode == OrderMode.DINE_IN,
                 cartItems = cartItems,
                 total = total,
-                onBack = { viewModel.navigateTo(Screen.ORDERING) },
+                onBack = {
+                    if (viewModel.canEditCurrentOrder()) viewModel.navigateTo(Screen.ORDERING)
+                },
                 onConfirm = viewModel::startPayment
             )
 
@@ -257,7 +308,9 @@ private fun OrderApp(viewModel: MainViewModel) {
             Screen.PAYMENT_RESULT -> {
                 PaymentFlowScreen(
                     viewModel = viewModel,
-                    onBackToOrdering = { viewModel.navigateTo(Screen.ORDERING) },
+                    onBackToOrdering = {
+                        if (viewModel.canEditCurrentOrder()) viewModel.navigateTo(Screen.ORDERING)
+                    },
                     onNextCustomer = { viewModel.navigateTo(Screen.MODE_SELECTION) }
                 )
             }

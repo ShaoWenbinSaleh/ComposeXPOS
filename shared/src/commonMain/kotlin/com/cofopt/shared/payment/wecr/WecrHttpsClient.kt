@@ -3,6 +3,8 @@ package com.cofopt.shared.payment.wecr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.random.Random
@@ -25,6 +27,16 @@ class WecrHttpsClient(
     private val cancelSoapNamespace: String = soapNamespace,
     private val logger: ((String) -> Unit)? = null,
 ) {
+    private companion object {
+        /**
+         * The mock must not report arbitrary references as paid. Keeping a
+         * process-local registry also makes repeated starts with the same
+         * client-generated reference idempotent for UI/recovery tests.
+         */
+        val mockTransactionsLock = Mutex()
+        val mockTransactions = mutableSetOf<String>()
+    }
+
     data class TransactionResult(
         val keyIndex: String?,
         val transactionRef: String?,
@@ -75,6 +87,10 @@ class WecrHttpsClient(
         val resolvedTransactionRef = transactionRef.ifBlank { "MOCK_TXN_$nonce" }
         val resolvedMerchantRef = merchantRef.ifBlank { "MOCK_ORDER_$nonce" }
 
+        mockTransactionsLock.withLock {
+            mockTransactions += resolvedTransactionRef
+        }
+
         log("MOCK startTransaction amount=$amount keyIndex=$keyIndex apiUrl=$apiUrl")
 
         TransactionResult(
@@ -96,6 +112,22 @@ class WecrHttpsClient(
         delay(250)
 
         log("MOCK getTransactionStatus keyIndex=$keyIndex transactionRef=$transactionRef")
+
+        val exists = mockTransactionsLock.withLock {
+            transactionRef.isNotBlank() && transactionRef in mockTransactions
+        }
+        if (!exists) {
+            return@withContext TransactionStatus(
+                keyIndex = keyIndex,
+                transactionResult = "1",
+                status = "91",
+                message = "MOCK: transaction not found",
+                amount = null,
+                brand = null,
+                ticket = null,
+                extras = mapOf("integration_mode" to "mock"),
+            )
+        }
 
         TransactionStatus(
             keyIndex = keyIndex,
@@ -126,14 +158,18 @@ class WecrHttpsClient(
 
         log("MOCK cancelTransaction keyIndex=$keyIndex transactionRef=$transactionRef force=$force")
 
+        val existed = mockTransactionsLock.withLock {
+            mockTransactions.remove(transactionRef)
+        }
+
         CancelTransactionResult(
             keyIndex = keyIndex.toString(),
             version = version,
             login = login,
             sid = sid,
             transactionRef = transactionRef,
-            status = "00",
-            message = "MOCK: transaction cancelled",
+            status = if (existed) "00" else "91",
+            message = if (existed) "MOCK: transaction cancelled" else "MOCK: transaction not found",
             signature = null,
         )
     }

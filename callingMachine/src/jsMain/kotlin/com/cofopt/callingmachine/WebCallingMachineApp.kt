@@ -46,7 +46,16 @@ actual fun WebCallingMachineApp() {
             return@DisposableEffect onDispose { }
         }
 
-        val socket = WebSocket(targetUrl)
+        var reconnectTimerId: Int? = null
+        val socket = runCatching { WebSocket(targetUrl) }
+            .getOrElse { error ->
+                isConnected = false
+                statusText = "Invalid WebSocket target: ${error.message.orEmpty()}"
+                reconnectTimerId = window.setTimeout({ reconnectNonce++ }, 2000)
+                return@DisposableEffect onDispose {
+                    reconnectTimerId?.let { window.clearTimeout(it) }
+                }
+            }
         statusText = "Connecting: $targetUrl"
         isConnected = false
 
@@ -114,13 +123,18 @@ actual fun WebCallingMachineApp() {
             val reason = closeEvent.reason as? String
             isConnected = false
             statusText = "Disconnected: code=${code ?: -1} reason=${reason.orEmpty()}"
-            window.setTimeout({
-                reconnectNonce++
-            }, 2000)
+            if (reconnectTimerId == null) {
+                reconnectTimerId = window.setTimeout({
+                    reconnectTimerId = null
+                    reconnectNonce++
+                }, 2000)
+            }
             null
         }
 
         onDispose {
+            reconnectTimerId?.let { window.clearTimeout(it) }
+            reconnectTimerId = null
             socket.onopen = null
             socket.onmessage = null
             socket.onerror = null
@@ -173,7 +187,7 @@ private fun resolveCallingMachineWsUrlOrNull(): String? {
     if (queryHost.isNotBlank()) {
         val scheme = if (window.location.protocol == "https:") "wss" else "ws"
         val port = queryPort ?: 9090
-        return "$scheme://$queryHost:$port/?mode=viewer"
+        return "$scheme://${queryHost.toWebSocketHost()}:$port/?mode=viewer"
     }
 
     val savedHost = runCatching {
@@ -184,21 +198,32 @@ private fun resolveCallingMachineWsUrlOrNull(): String? {
     }.getOrNull()?.takeIf { it in 1..65535 }
     if (savedHost.isNotBlank() && savedPort != null) {
         val scheme = if (window.location.protocol == "https:") "wss" else "ws"
-        return "$scheme://$savedHost:$savedPort/?mode=viewer"
+        return "$scheme://${savedHost.toWebSocketHost()}:$savedPort/?mode=viewer"
     }
 
     val host = window.location.hostname.orEmpty().trim()
     if (!isLikelyLocalLanHost(host)) return null
     val scheme = if (window.location.protocol == "https:") "wss" else "ws"
-    return "$scheme://$host:9090/?mode=viewer"
+    return "$scheme://${host.toWebSocketHost()}:9090/?mode=viewer"
 }
 
 private fun ensureViewerMode(raw: String): String {
-    val url = raw.trim()
+    var url = raw.trim()
     if (url.isBlank()) return url
-    if (url.contains("mode=viewer")) return url
-    val separator = if (url.contains("?")) "&" else "?"
-    return "${url}${separator}mode=viewer"
+    val modeRegex = Regex("([?&])mode=[^&#]*", RegexOption.IGNORE_CASE)
+    if (modeRegex.containsMatchIn(url)) {
+        return url.replace(modeRegex, "\$1mode=viewer")
+    }
+    val fragmentIndex = url.indexOf('#')
+    val fragment = if (fragmentIndex >= 0) url.substring(fragmentIndex) else ""
+    if (fragmentIndex >= 0) url = url.substring(0, fragmentIndex)
+    val separator = if (url.contains('?')) "&" else "?"
+    return "$url${separator}mode=viewer$fragment"
+}
+
+private fun String.toWebSocketHost(): String {
+    val host = trim().removePrefix("[").removeSuffix("]")
+    return if (host.contains(':')) "[$host]" else host
 }
 
 private fun resolveLocalIpForWeb(): String {
@@ -208,7 +233,7 @@ private fun resolveLocalIpForWeb(): String {
 }
 
 private fun isLikelyLocalLanHost(host: String): Boolean {
-    val clean = host.trim().lowercase()
+    val clean = host.trim().removePrefix("[").removeSuffix("]").lowercase()
     if (clean.isBlank()) return false
     if (clean == "localhost" || clean == "127.0.0.1" || clean == "::1") return true
     if (!isIpv4Address(clean)) return false
@@ -252,8 +277,10 @@ private fun parseQuery(rawSearch: String): Map<String, String> {
         .mapNotNull { pair ->
             val idx = pair.indexOf('=')
             if (idx < 0) return@mapNotNull null
-            val key = decodeURIComponent(pair.substring(0, idx).trim())
-            val value = decodeURIComponent(pair.substring(idx + 1).trim())
+            val key = runCatching { decodeURIComponent(pair.substring(0, idx).trim()) }
+                .getOrNull() ?: return@mapNotNull null
+            val value = runCatching { decodeURIComponent(pair.substring(idx + 1).trim()) }
+                .getOrNull() ?: return@mapNotNull null
             if (key.isBlank()) null else key to value
         }
         .toMap()

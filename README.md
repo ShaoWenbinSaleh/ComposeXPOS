@@ -191,6 +191,8 @@ Related configs:
 - Source:
   - Required: `?mode=source&key=<CALLING_WS_SHARED_KEY>`
   - Optional hardening: `&ts=<millis>&sig=<sha256>`
+  - Stable source identity: `&sourceId=<device-id>`; the server aggregates
+    independent source snapshots instead of letting one cashier erase another.
 
 Default placeholder key location:
 
@@ -292,6 +294,7 @@ Core endpoints:
 - Optional request-signature hardening is supported with:
   - `ts=<millis>`
   - `sig=sha256("CALLING_WS_V1|<ts>|<CALLING_WS_SHARED_KEY>")`
+- Source clients should persist and resend a stable `sourceId` across reconnects.
 - Viewer role (`mode=viewer`) is read-only and cannot publish snapshots/alerts.
 
 All default shared keys are placeholder values in:

@@ -47,6 +47,12 @@ kotlin {
             implementation(libs.compose.ui)
             implementation(libs.compose.uiToolingPreview)
         }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+        androidUnitTest.dependencies {
+            implementation(kotlin("test"))
+        }
         androidMain.dependencies {
             implementation("androidx.activity:activity-compose:1.9.3")
             implementation("androidx.compose.ui:ui")
@@ -67,6 +73,10 @@ kotlin {
             implementation("org.java-websocket:Java-WebSocket:1.5.6")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
+        }
+        iosMain.dependencies {
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
         }
     }
 }
@@ -98,6 +108,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 

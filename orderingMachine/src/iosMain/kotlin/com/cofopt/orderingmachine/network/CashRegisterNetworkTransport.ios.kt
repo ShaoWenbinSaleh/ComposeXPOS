@@ -3,14 +3,15 @@ package com.cofopt.orderingmachine.network
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.*
 import kotlin.coroutines.resume
 
 actual object CashRegisterNetworkTransport {
     actual suspend fun testConnection(host: String, port: Int, timeoutMillis: Int): Boolean {
-        val healthUrl = "http://$host:$port/health"
-        return runCatching {
+        val healthUrl = cashRegisterUrl(host, port, "/health") ?: return false
+        return try {
             val response = request(
                 method = "GET",
                 url = healthUrl,
@@ -18,8 +19,12 @@ actual object CashRegisterNetworkTransport {
                 connectTimeoutMillis = timeoutMillis,
                 readTimeoutMillis = timeoutMillis,
             )
-            response.statusCode in 100..599
-        }.getOrDefault(false)
+            isCashRegisterHealthResponse(response)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     actual suspend fun request(
@@ -33,6 +38,10 @@ actual object CashRegisterNetworkTransport {
             ?: return CashRegisterHttpResponse(statusCode = 0, body = "Invalid URL")
         val request = NSMutableURLRequest.requestWithURL(nsUrl).apply {
             setHTTPMethod(method)
+            val totalTimeoutMillis =
+                connectTimeoutMillis.toLong().coerceAtLeast(0) + readTimeoutMillis.toLong().coerceAtLeast(0)
+            setTimeoutInterval(totalTimeoutMillis.coerceAtLeast(1).toDouble() / 1000.0)
+            setValue("application/json, text/plain", forHTTPHeaderField = "Accept")
             if (requestBody != null) {
                 setValue("application/json; charset=utf-8", forHTTPHeaderField = "Content-Type")
                 setHTTPBody(requestBody.encodeToByteArray().toNSData())
@@ -43,6 +52,9 @@ actual object CashRegisterNetworkTransport {
             val task = NSURLSession.sharedSession.dataTaskWithRequest(
                 request = request as NSURLRequest,
                 completionHandler = { data, response, error ->
+                    if (!cont.isActive) {
+                        return@dataTaskWithRequest
+                    }
                     if (error != null) {
                         cont.resume(
                             CashRegisterHttpResponse(

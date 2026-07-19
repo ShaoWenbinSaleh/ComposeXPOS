@@ -52,7 +52,7 @@
       </BuildableProductRunnable>
    </LaunchAction>
    <ProfileAction
-      buildConfiguration = "Debug-Calling"
+      buildConfiguration = "Release-Calling"
       shouldUseLaunchSchemeArgsEnv = "YES"
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
@@ -72,7 +72,7 @@
       buildConfiguration = "Debug-Calling">
    </AnalyzeAction>
    <ArchiveAction
-      buildConfiguration = "Debug-Calling"
+      buildConfiguration = "Release-Calling"
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>
